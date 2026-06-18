@@ -11,7 +11,7 @@
     "pr"
   ],
   "pi": {
-    "extensions": ["./extensions/visual-recap/index.ts"],
+    "extensions": ["./extensions/visual-recap/entrypoint.ts"],
     "skills": ["./skills"]
   },
   "peerDependencies": {
