@@ -86,7 +86,7 @@ export async function exec(
 export async function tryExec(
 	command: string,
 	args: string[],
-	options: { cwd?: string; signal?: AbortSignal } = {},
+	options: { cwd?: string; signal?: AbortSignal; maxBuffer?: number } = {},
 ): Promise<ExecResult | undefined> {
 	try {
 		return await exec(command, args, options);
