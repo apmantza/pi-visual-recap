@@ -4,11 +4,11 @@
 import type { RecapDocument } from "../schemas.ts";
 
 export function renderHtml(doc: RecapDocument): string {
-  const json = JSON.stringify(doc, null, 2)
-    .replace(/</g, "\\u003c")
-    .replace(/>/g, "\\u003e")
-    .replace(/&/g, "\\u0026");
-  return `<!doctype html>
+	const json = JSON.stringify(doc, null, 2)
+		.replace(/</g, "\\u003c")
+		.replace(/>/g, "\\u003e")
+		.replace(/&/g, "\\u0026");
+	return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -181,5 +181,8 @@ export function renderHtml(doc: RecapDocument): string {
 }
 
 function escape(value: string): string {
-  return value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] ?? c));
+	return value.replace(
+		/[&<>"]/g,
+		(c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c,
+	);
 }

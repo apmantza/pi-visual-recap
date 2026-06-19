@@ -17,8 +17,22 @@ export function parseTarget(
 	const lower = trimmed.toLowerCase();
 
 	if (lower.startsWith("session ")) {
-		const value = trimmed.slice("session ".length).trim() || "current";
-		return { kind: "session", session: value };
+		const rest = trimmed.slice("session ".length).trim();
+		if (!rest || lower === "session current" || rest === "current") {
+			return { kind: "session", session: "current" };
+		}
+		if (rest === "tree") {
+			return { kind: "session", session: "tree" };
+		}
+		if (rest.startsWith("fork ") || rest.startsWith("fork\t")) {
+			const entryId = rest.slice("fork ".length).trim();
+			if (!entryId) {
+				throw new Error("`session fork` requires an entry id: `session fork <entryId>`");
+			}
+			return { kind: "session", session: "current", forkAt: entryId };
+		}
+		// Treat as a path to a session file.
+		return { kind: "session", session: rest };
 	}
 	if (lower === "session") {
 		return { kind: "session", session: "current" };
