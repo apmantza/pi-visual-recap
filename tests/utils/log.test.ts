@@ -1,10 +1,10 @@
-// Unit tests for the log sanitiser. Run with `npx vitest run`.
+// Unit tests for the log sanitizer. Run with `npx vitest run`.
 // These guard against regressions in the path-redaction regexes —
 // a silent bug here would either leak absolute paths in logs or
 // mangle legitimate error messages.
 
 import { describe, expect, it } from "vitest";
-import { sanitizeErrorMessage } from "../utils/log.ts";
+import { sanitizeErrorMessage } from "../../extensions/visual-recap/utils/log.ts";
 
 describe("sanitizeErrorMessage", () => {
 	it.each([
@@ -46,19 +46,29 @@ describe("sanitizeErrorMessage", () => {
 			"mixed Windows + Unix: C:\\foo and /bar leak neither",
 			"mixed Windows + Unix: <path> and <path> leak neither",
 		],
-		// Paths starting with common Unix-special characters.
-		[
-			"home directory ~ expansion failed for ~/.pi/agent/auth.json",
-			"home directory ~ expansion failed for <path>",
-		],
-		[
-			"config at ~/.pi/agent/x: parse error",
-			"config at <path>",
-		],
-		// Empty / degenerate inputs.
+		// Home-relative paths. Tilde at the start of a token is treated as
+		// a path even without a leading `/`, because error messages
+		// practically never use `~` for anything else.
+		["~/.pi/agent/auth.json", "<path>"],
+		["~ expansion failed for ~/.pi/agent/auth.json", "<path> expansion failed for <path>"],
+		["config at ~/.pi/agent/x: parse error", "config at <path> parse error"],
+		["open ~/.bashrc", "open <path>"],
+		["'~/.ssh/id_rsa'", "'<path>'"],
+		// Tilde user prefix (rare but real: ~alice/foo).
+		["~user/.ssh is 700", "<path> is 700"],
+		// Non-string inputs: must not throw.
 		["", ""],
 		["no path here", "no path here"],
 	])("sanitises %j", (input, expected) => {
+		expect(sanitizeErrorMessage(input)).toBe(expected);
+	});
+
+	it.each([
+		[null as unknown as string, "null"],
+		[undefined as unknown as string, "undefined"],
+		[123 as unknown as string, "123"],
+		[true as unknown as string, "true"],
+	])("does not throw on non-string %p", (input, expected) => {
 		expect(sanitizeErrorMessage(input)).toBe(expected);
 	});
 });
