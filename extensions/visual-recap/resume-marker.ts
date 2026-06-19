@@ -9,6 +9,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { RESUME_MARKER_TYPE } from "./collectors/pi-session.ts";
+import { sanitizeErrorMessage } from "./utils/log.ts";
 
 export function writeResumeMarker(
 	pi: ExtensionAPI,
@@ -23,9 +24,7 @@ export function writeResumeMarker(
 		});
 	} catch (err) {
 		// Marker write is best-effort — never crash session_start over it.
-		// Sanitize the error so we don't leak absolute paths in logs.
-		const message = err instanceof Error ? err.message : String(err);
-		const safe = message.replace(/[A-Za-z]:\\[^\s)]+/g, "<path>").replace(/\/[^\s)]+/g, (m) => (m.startsWith("//") ? m : "<path>"));
-		console.warn(`[pi-visual-recap] Failed to write resume marker: ${safe}`);
+		const raw = err instanceof Error ? err.message : String(err);
+		console.warn(`[pi-visual-recap] Failed to write resume marker: ${sanitizeErrorMessage(raw)}`);
 	}
 }
