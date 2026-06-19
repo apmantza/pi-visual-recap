@@ -36,6 +36,12 @@ import type {
 import { safeJoin, slugify, timestampSlug } from "./utils/paths.ts";
 import { redactSecrets } from "./utils/secret-redactor.ts";
 
+function basenameOf(p: string): string {
+	const trimmed = p.replace(/[\\/]+$/, "");
+	const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+	return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
 const COMMAND_NAME = "visual-recap";
 const TOOL_NAME = "visual_recap";
 
@@ -104,6 +110,13 @@ export async function generateRecap(
 			title: evidence.titleHint,
 			brief: fallbackBrief(evidence),
 			target: evidence.targetLabel,
+			project: basenameOf(ctx.cwd),
+			repoRoot:
+				evidence.source === "git"
+					? evidence.git?.repoRoot
+					: evidence.source === "github-pr"
+						? evidence.pr?.repoSlug
+						: ctx.cwd,
 		},
 		model,
 		evidence,

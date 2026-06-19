@@ -337,7 +337,13 @@ function summarizeSessionForPrompt(s: SessionEvidence): string {
 
 export function coerceRecapDocument(
 	raw: string,
-	fallback: { title: string; brief: string; target: string },
+	fallback: {
+		title: string;
+		brief: string;
+		target: string;
+		project?: string;
+		repoRoot?: string;
+	},
 	model: { provider: string; id: string } | undefined,
 	evidence: RecapEvidence,
 ): RecapDocument {
@@ -442,6 +448,8 @@ export function coerceRecapDocument(
 		title: String(parsed.title ?? fallback.title).slice(0, 100),
 		brief: String(parsed.brief ?? fallback.brief),
 		target: fallback.target,
+		...(fallback.project ? { project: fallback.project } : {}),
+		...(fallback.repoRoot ? { repoRoot: fallback.repoRoot } : {}),
 		generatedAt: new Date().toISOString(),
 		model,
 		sections,
@@ -459,7 +467,13 @@ export function coerceRecapDocument(
 
 function buildFallbackDocument(
 	raw: string,
-	fallback: { title: string; brief: string; target: string },
+	fallback: {
+		title: string;
+		brief: string;
+		target: string;
+		project?: string;
+		repoRoot?: string;
+	},
 	model: { provider: string; id: string } | undefined,
 	evidence: RecapEvidence,
 ): RecapDocument {
@@ -495,6 +509,8 @@ function buildFallbackDocument(
 		title: fallback.title,
 		brief: fallback.brief,
 		target: fallback.target,
+		...(fallback.project ? { project: fallback.project } : {}),
+		...(fallback.repoRoot ? { repoRoot: fallback.repoRoot } : {}),
 		generatedAt: new Date().toISOString(),
 		model,
 		sections,

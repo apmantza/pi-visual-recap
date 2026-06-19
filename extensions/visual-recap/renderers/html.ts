@@ -23,11 +23,16 @@ export function renderHtml(doc: RecapDocument): string {
 		risks: doc.risks ?? [],
 		followUps: doc.followUps ?? [],
 	};
+	const keyChangePaths = doc.keyChanges
+		.map((change) => change.path)
+		.filter((p): p is string => typeof p === "string" && p.length > 0);
 	const stats = summarize(doc);
 	const sections = [
 		renderHero(doc, stats),
 		renderSectionNav(doc),
-		...doc.sections.map((section, index) => renderSection(section, index)),
+		...doc.sections.map((section, index) =>
+			renderSection(section, index, keyChangePaths),
+		),
 		renderKeyChanges(doc.keyChanges),
 		renderFollowUps(doc.followUps),
 	].filter(Boolean);
@@ -182,9 +187,15 @@ export function renderHtml(doc: RecapDocument): string {
   .file-diff-stats { display: inline-flex; gap: 8px; font-family: var(--font-mono); font-size: 0.75rem; }
   .file-diff-stats .add { color: var(--ok); }
   .file-diff-stats .del { color: var(--danger); }
-  .diff-pre { max-height: 520px; margin: 0; padding: 14px; overflow: auto; background: var(--bg-soft); color: var(--fg); font-size: 0.78rem; line-height: 1.55; white-space: pre; }
+  .diff-pre { max-height: 520px; margin: 0; padding: 14px; overflow: auto; background: var(--bg-soft); color: var(--fg); font-size: 0.78rem; line-height: 1.55; }
+  .diff-pre code { display: block; white-space: pre; }
+  .diff-line { display: block; padding: 0 8px; }
+  .diff-line.diff-add { background: rgba(5, 150, 105, 0.18); color: var(--ok); border-left: 3px solid var(--ok); }
+  .diff-line.diff-del { background: rgba(220, 38, 38, 0.18); color: var(--danger); border-left: 3px solid var(--danger); }
+  .diff-line.diff-meta { color: var(--muted); }
   .other-files { margin-top: 18px; }
   .other-files h3 { margin-bottom: 10px; }
+  .key-changes-empty { margin-bottom: 12px; color: var(--muted); font-style: italic; }
   .search { width: min(360px, 100%); border: 1px solid var(--line); border-radius: 10px; background: var(--panel-recessed); color: var(--fg); padding: 9px 12px; outline: none; }
   .file-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 10px; }
   .file-card { position: relative; min-height: 120px; border: 1px solid var(--line); border-radius: 10px; padding: 14px; background: var(--panel); transition: border-color 160ms ease; }
@@ -538,11 +549,20 @@ function renderHero(doc: RecapDocument, stats: RecapStats): string {
 	const model = doc.model
 		? `${doc.model.provider}/${doc.model.id}`
 		: "model unavailable";
+	const project = doc.project
+		? `<span class="pill pill-project"><code>${escape(doc.project)}</code></span>`
+		: "";
+	const repo =
+		doc.repoRoot && doc.repoRoot !== doc.project
+			? `<span class="pill pill-repo"><code>${escape(doc.repoRoot)}</code></span>`
+			: "";
 	return `<header class="hero" id="overview">
   <div class="eyebrow">
     <span class="pill"><span class="spark"></span>Visual recap</span>
     <span class="pill">${escape(sourceLabel(doc.source))}</span>
     <span class="pill"><code>${escape(doc.target)}</code></span>
+    ${project}
+    ${repo}
     <span class="pill">${escape(formatDate(doc.generatedAt))}</span>
     <span class="pill">${escape(model)}</span>
   </div>
@@ -587,7 +607,11 @@ function renderSectionNav(doc: RecapDocument): string {
 		.join("")}</nav>`;
 }
 
-function renderSection(section: RecapSection, index: number): string {
+function renderSection(
+	section: RecapSection,
+	index: number,
+	keyChangePaths: string[] = [],
+): string {
 	switch (section.type) {
 		case "outcome":
 			return renderCard(
@@ -615,7 +639,7 @@ function renderSection(section: RecapSection, index: number): string {
 				index,
 				"Footprint",
 				section.title ?? "Changed files",
-				renderFileGallery(section.entries),
+				renderFileGallery(section.entries, keyChangePaths),
 			);
 		case "session-timeline":
 			return renderCard(
@@ -747,17 +771,34 @@ function usageCard(value: string, label: string): string {
 	return `<div class="usage-card"><strong>${escape(value)}</strong><span>${escape(label)}</span></div>`;
 }
 
-function renderFileGallery(entries: FileMapEntry[]): string {
+function renderFileGallery(
+	entries: FileMapEntry[],
+	keyChangePaths: string[] = [],
+): string {
 	if (entries.length === 0)
 		return `<p class="prose">No changed files were captured.</p>`;
-	const filesWithDiffs = entries.filter(
-		(e) => typeof e.diff === "string" && e.diff.length > 0,
-	);
-	const otherFiles = entries.filter((e) => !filesWithDiffs.includes(e));
+	// Drive the tabbed "files with diffs" section from the key changes paths
+	// reported by the model. Files outside that set get listed as "Other
+	// files" with no diff body — keeps the diff UI focused on what the recap
+	// actually called out.
+	const keySet = new Set(keyChangePaths);
+	const matchedFiles: FileMapEntry[] = [];
+	const otherFiles: FileMapEntry[] = [];
+	const seen = new Set<string>();
+	for (const entry of entries) {
+		if (seen.has(entry.path)) continue;
+		seen.add(entry.path);
+		const hasDiff = typeof entry.diff === "string" && entry.diff.length > 0;
+		if (keySet.has(entry.path) && hasDiff) {
+			matchedFiles.push(entry);
+		} else {
+			otherFiles.push(entry);
+		}
+	}
 	const groupId = `files-${renderGroupCounter++}`;
 	const tabButtons: string[] = [];
 	const tabPanels: string[] = [];
-	filesWithDiffs.forEach((entry, index) => {
+	matchedFiles.forEach((entry, index) => {
 		const badge = badgeFor(entry.status);
 		const tabId = `${groupId}-tab-${index}`;
 		const panelId = `${groupId}-panel-${index}`;
@@ -783,13 +824,13 @@ function renderFileGallery(entries: FileMapEntry[]): string {
 						<span class="del">−${entry.deletions}</span>
 					</div>
 				</header>
-				<pre class="diff-pre"><code>${escape(entry.diff ?? "")}</code></pre>
+				<pre class="diff-pre"><code>${highlightDiff(entry.diff ?? "")}</code></pre>
 			</article>`,
 		);
 	});
 	const tabs =
-		filesWithDiffs.length > 0
-			? `<div class="file-tabs" role="tablist" aria-label="Changed files">
+		matchedFiles.length > 0
+			? `<div class="file-tabs" role="tablist" aria-label="Key changed files">
 				${tabButtons.join("")}
 			</div>
 			<div class="file-tab-panels">
@@ -799,12 +840,42 @@ function renderFileGallery(entries: FileMapEntry[]): string {
 	const otherList =
 		otherFiles.length > 0
 			? `<div class="other-files">
-				<h3>Other files</h3>
+				<h3>Other files (${otherFiles.length})</h3>
 				<div class="file-grid">${otherFiles.map(renderFileCard).join("")}</div>
 			</div>`
 			: "";
-	const header = `<div class="file-toolbar"><div class="prose">${entries.length} file${entries.length === 1 ? "" : "s"} changed.</div></div>`;
-	return `${header}${tabs}${otherList}`;
+	const note =
+		matchedFiles.length === 0
+			? `<p class="key-changes-empty">No key changes were called out, so no diff previews are shown. Listed files are below.</p>`
+			: "";
+	const header = `<div class="file-toolbar"><div class="prose">${entries.length} file${entries.length === 1 ? "" : "s"} changed — ${matchedFiles.length} highlighted as key changes.</div></div>`;
+	return `${note}${header}${tabs}${otherList}`;
+}
+
+function highlightDiff(diff: string): string {
+	if (!diff) return "";
+	const lines = diff.split("\n");
+	return lines
+		.map((line) => {
+			const escaped = escape(line);
+			if (line.startsWith("@@")) {
+				return `<span class="diff-line diff-meta">${escaped}</span>`;
+			}
+			if (line.startsWith("diff ") || line.startsWith("index ")) {
+				return `<span class="diff-line diff-meta">${escaped}</span>`;
+			}
+			if (line.startsWith("---") || line.startsWith("+++")) {
+				return `<span class="diff-line diff-meta">${escaped}</span>`;
+			}
+			if (line.startsWith("+")) {
+				return `<span class="diff-line diff-add">${escaped}</span>`;
+			}
+			if (line.startsWith("-")) {
+				return `<span class="diff-line diff-del">${escaped}</span>`;
+			}
+			return `<span class="diff-line">${escaped}</span>`;
+		})
+		.join("\n");
 }
 
 let renderGroupCounter = 0;

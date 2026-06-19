@@ -167,6 +167,10 @@ export interface RecapDocument {
 	title: string;
 	brief: string;
 	target: string;
+	/** Project folder name (basename of the working directory at generation time). */
+	project?: string;
+	/** Absolute path to the repo / project root, when known. */
+	repoRoot?: string;
 	generatedAt: string;
 	model?: { provider: string; id: string };
 	sections: RecapSection[];

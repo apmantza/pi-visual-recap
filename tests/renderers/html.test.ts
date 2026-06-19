@@ -123,6 +123,12 @@ describe("renderHtml", () => {
 	it("renders files without diffs as Other files cards", () => {
 		const html = renderHtml(
 			doc({
+				keyChanges: [
+					{
+						path: "src/with-diff.ts",
+						summary: "Updated with diff",
+					},
+				],
 				sections: [
 					{
 						type: "file-tree",
@@ -155,6 +161,10 @@ describe("renderHtml", () => {
 	it("emits ARIA tablist attributes on the file diffs section", () => {
 		const html = renderHtml(
 			doc({
+				keyChanges: [
+					{ path: "src/a.ts", summary: "A" },
+					{ path: "src/b.ts", summary: "B" },
+				],
 				sections: [
 					{
 						type: "file-tree",
@@ -189,6 +199,7 @@ describe("renderHtml", () => {
 	it("escapes diff content in the file disclosure", () => {
 		const html = renderHtml(
 			doc({
+				keyChanges: [{ path: "src/example.ts", summary: "x" }],
 				sections: [
 					{
 						type: "file-tree",
@@ -208,6 +219,81 @@ describe("renderHtml", () => {
 
 		expect(html).not.toContain("<script>alert(1)</script>");
 		expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+	});
+
+	it("shows project and repo pills in the hero", () => {
+		const html = renderHtml(
+			doc({
+				project: "pi-visual-recap",
+				repoRoot: "/home/user/pi-visual-recap",
+			}),
+		);
+		expect(html).toContain("pi-visual-recap");
+		expect(html).toContain("/home/user/pi-visual-recap");
+		expect(html).toContain("pill-project");
+		expect(html).toContain("pill-repo");
+	});
+
+	it("only renders diffs for files listed in keyChanges", () => {
+		const html = renderHtml(
+			doc({
+				keyChanges: [{ path: "src/key.ts", summary: "key change" }],
+				sections: [
+					{
+						type: "file-tree",
+						entries: [
+							{
+								path: "src/key.ts",
+								status: "modified",
+								additions: 1,
+								deletions: 0,
+								diff: "@@ -1 +1 @@\n+key line",
+							},
+							{
+								path: "src/other.ts",
+								status: "modified",
+								additions: 2,
+								deletions: 0,
+								diff: "@@ -1 +1 @@\n+other line",
+							},
+						],
+					},
+				],
+			}),
+		);
+		// src/key.ts gets a diff tab
+		expect(html).toMatch(/file-tab-path[^>]*>\s*src\/key\.ts/);
+		expect(html).toContain("diff-add");
+		// src/other.ts goes to Other files, no tab, no diff body in panel
+		expect(html).not.toMatch(/file-tab-path[^>]*>\s*src\/other\.ts/);
+		expect(html).toContain("Other files");
+	});
+
+	it("highlights diff lines: green for added, red for removed", () => {
+		const html = renderHtml(
+			doc({
+				keyChanges: [{ path: "src/x.ts", summary: "x" }],
+				sections: [
+					{
+						type: "file-tree",
+						entries: [
+							{
+								path: "src/x.ts",
+								status: "modified",
+								additions: 1,
+								deletions: 1,
+								diff: "@@ -1 +1 @@\n-removed\n+added",
+							},
+						],
+					},
+				],
+			}),
+		);
+		expect(html).toMatch(/<span class="diff-line diff-add">\+added<\/span>/);
+		expect(html).toMatch(/<span class="diff-line diff-del">-removed<\/span>/);
+		expect(html).toMatch(
+			/<span class="diff-line diff-meta">@@ -1 \+1 @@<\/span>/,
+		);
 	});
 
 	it("shows dashes for session usage without token metadata", () => {
