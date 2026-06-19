@@ -1,4 +1,4 @@
-// Helpers for sanitising error messages before logging. Shared between
+// Helpers for sanitizing error messages before logging. Shared between
 // resume-marker and the session_start handler so the path-stripping
 // behaviour stays consistent.
 
@@ -8,9 +8,13 @@ const WINDOWS_PATH = /[A-Za-z]:\\[^\s)]+/g;
  * Matches Unix absolute paths but only when they look like filesystem
  * paths — i.e. the leading `/` is preceded by start-of-string, whitespace,
  * or an opening bracket/quote. This avoids mangling relative paths like
- * "foo/bar.ts" or embedded slashes inside a word.
+ * "foo/bar.ts" or embedded slashes inside a word. Path characters are
+ * conservative: letters, digits, and the common path punctuation
+ * (`_.-@~+`). The regex stops at any character that usually delimits
+ * a path in an error message (whitespace, quotes, brackets, parens,
+ * backticks).
  */
-const UNIX_PATH = /(?:^|[\s(>'"`])\/[A-Za-z0-9_.-][^\s'"`)]*/g;
+const UNIX_PATH = /(?:^|[\s(>'"`])\/[A-Za-z0-9_.@~+-][^\s'"`)]*/g;
 
 export function sanitizeErrorMessage(message: string): string {
 	return (

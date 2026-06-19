@@ -20,10 +20,13 @@ export default function (pi: ExtensionAPI) {
 			if (!event.previousSessionFile) return;
 			writeResumeMarker(pi, event.previousSessionFile);
 		} catch (err) {
-			// Belt-and-braces: writeResumeMarker already catches and logs,
-			// but if a future change in pi.appendEntry makes it async, a
-			// floating promise rejection would crash session_start. This
-			// outer catch keeps the extension failure-isolated.
+			// Belt-and-braces for any synchronous throw from writeResumeMarker
+			// or the guard checks above. Note: this try/catch does NOT catch
+			// unhandled promise rejections — if a future change in
+			// pi.appendEntry returns a promise, that needs explicit .catch
+			// handling inside writeResumeMarker. For now, writeResumeMarker
+			// already catches and logs its own errors, so this outer block
+			// only protects against unexpected sync throws.
 			const raw = err instanceof Error ? err.message : String(err);
 			console.warn(`[pi-visual-recap] session_start handler failed: ${sanitizeErrorMessage(raw)}`);
 		}

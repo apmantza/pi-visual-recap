@@ -46,6 +46,15 @@ describe("sanitizeErrorMessage", () => {
 			"mixed Windows + Unix: C:\\foo and /bar leak neither",
 			"mixed Windows + Unix: <path> and <path> leak neither",
 		],
+		// Paths starting with common Unix-special characters.
+		[
+			"home directory ~ expansion failed for ~/.pi/agent/auth.json",
+			"home directory ~ expansion failed for <path>",
+		],
+		[
+			"config at ~/.pi/agent/x: parse error",
+			"config at <path>",
+		],
 		// Empty / degenerate inputs.
 		["", ""],
 		["no path here", "no path here"],
