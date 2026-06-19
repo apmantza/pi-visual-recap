@@ -182,6 +182,25 @@ function renderSection(lines: string[], section: RecapSection): void {
 			lines.push("```");
 			lines.push("");
 			return;
+		case "session-usage":
+			lines.push("## Tool and token usage");
+			lines.push("");
+			lines.push(`- User prompts: ${section.usage.userPrompts}`);
+			lines.push(`- Tool calls: ${section.usage.totalToolCalls}`);
+			lines.push(`- Assistant turns: ${section.usage.assistantMessages}`);
+			if (section.usage.tokens) {
+				lines.push(`- Tokens: ${section.usage.tokens.total.toLocaleString()}`);
+			}
+			if (section.usage.tools.length > 0) {
+				lines.push("");
+				lines.push("| Tool | Calls |");
+				lines.push("| --- | ---: |");
+				for (const tool of section.usage.tools) {
+					lines.push(`| \`${tool.name}\` | ${tool.count} |`);
+				}
+			}
+			lines.push("");
+			return;
 		case "file-tree":
 			lines.push(`## ${section.title ?? "Changed files"}`);
 			lines.push("");
@@ -205,6 +224,10 @@ function renderSection(lines: string[], section: RecapSection): void {
 			}
 			lines.push("");
 			return;
+		default: {
+			const _exhaustive: never = section;
+			throw new Error(`Unsupported recap section: ${String(_exhaustive)}`);
+		}
 	}
 }
 

@@ -2,6 +2,7 @@
 import * as path from "node:path";
 import { existsSync } from "node:fs";
 import {
+	generateUnifiedPatch,
 	SessionManager,
 	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
@@ -12,12 +13,14 @@ import {
 	summarizeToolArgs,
 	summarizeToolResult,
 } from "./tool-summary.ts";
+import { redactSecrets } from "../utils/secret-redactor.ts";
 import type {
 	SessionBranchSummary,
 	SessionDecision,
 	SessionEvidence,
 	SessionTimelineItem,
 	SessionTurn,
+	SessionUsageSummary,
 } from "../schemas.ts";
 
 export const RESUME_MARKER_TYPE = "visual-recap:resume-from";
@@ -34,6 +37,7 @@ interface AssistantLike {
 	role: string;
 	content: unknown;
 	timestamp?: string | number | Date;
+	usage?: unknown;
 }
 
 interface SessionTreeNode {
@@ -131,6 +135,7 @@ export async function collectSession(
 		assistantSummaries: fullWalk.assistantSummaries,
 		turns: fullWalk.turns,
 		toolCalls: fullWalk.toolCalls,
+		usage: fullWalk.usage,
 		touchedFiles: fullWalk.touchedFiles,
 		decisions: fullWalk.decisions,
 		compactionSummaries: fullWalk.compactionSummaries,
@@ -200,6 +205,7 @@ interface BranchWalk {
 	touchedFiles: SessionEvidence["touchedFiles"];
 	userPrompts: string[];
 	assistantSummaries: string[];
+	usage: SessionUsageSummary;
 	startedAt?: string;
 	endedAt?: string;
 	totalMessages: number;
@@ -211,12 +217,23 @@ function walkBranch(branch: SessionEntry[]): BranchWalk {
 	const compactionSummaries: string[] = [];
 	const timeline: SessionTimelineItem[] = [];
 	const toolCallCounts = new Map<string, number>();
+	const bashCallCounts = new Map<string, number>();
+	const usageTokens = {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		total: 0,
+		cost: 0,
+	};
 	const touchedFiles: SessionEvidence["touchedFiles"] = [];
 	const userPrompts: string[] = [];
 	const assistantSummaries: string[] = [];
 	let startedAt: string | undefined;
 	let endedAt: string | undefined;
 	let totalMessages = 0;
+	let assistantMessages = 0;
+	let toolResultMessages = 0;
 
 	for (const [i, entry] of branch.entries()) {
 		if (!startedAt) startedAt = entry.timestamp;
@@ -273,6 +290,8 @@ function walkBranch(branch: SessionEntry[]): BranchWalk {
 			continue;
 		}
 		if (message.role === "assistant") {
+			assistantMessages += 1;
+			addUsage(usageTokens, message.usage);
 			const text = extractText(message.content);
 			const toolCalls = extractAssistantToolCalls(message.content);
 			if (text.trim()) {
@@ -281,7 +300,7 @@ function walkBranch(branch: SessionEntry[]): BranchWalk {
 					index: i,
 					role: "assistant",
 					text,
-					toolCalls,
+					toolCalls: stripRawToolArgs(toolCalls),
 					timestamp: entry.timestamp,
 				});
 				timeline.push({
@@ -294,7 +313,7 @@ function walkBranch(branch: SessionEntry[]): BranchWalk {
 					index: i,
 					role: "assistant",
 					text: "",
-					toolCalls,
+					toolCalls: stripRawToolArgs(toolCalls),
 					timestamp: entry.timestamp,
 				});
 				timeline.push({
@@ -305,12 +324,17 @@ function walkBranch(branch: SessionEntry[]): BranchWalk {
 			}
 			for (const call of toolCalls) {
 				toolCallCounts.set(call.name, (toolCallCounts.get(call.name) ?? 0) + 1);
+				if (call.name === "bash") {
+					const command = extractCommandFromRawArgs(call.rawArgs) ?? call.args;
+					bashCallCounts.set(command, (bashCallCounts.get(command) ?? 0) + 1);
+				}
 				recordTouchedFiles(call, touchedFiles);
 				recordDecisionHints(call, decisions);
 			}
 			continue;
 		}
 		if (message.role === "toolResult") {
+			toolResultMessages += 1;
 			const toolResults = extractToolResults(message);
 			turns.push({
 				index: i,
@@ -344,6 +368,35 @@ function walkBranch(branch: SessionEntry[]): BranchWalk {
 		touchedFiles,
 		userPrompts,
 		assistantSummaries,
+		usage: {
+			userPrompts: userPrompts.length,
+			assistantMessages,
+			toolResults: toolResultMessages,
+			totalToolCalls: Array.from(toolCallCounts.values()).reduce(
+				(a, b) => a + b,
+				0,
+			),
+			tools: Array.from(toolCallCounts.entries()).map(([name, count]) => ({
+				name,
+				count,
+			})),
+			bash: Array.from(bashCallCounts.entries()).map(([command, count]) => ({
+				command,
+				count,
+			})),
+			...(usageTokens.total > 0
+				? {
+						tokens: {
+							input: usageTokens.input,
+							output: usageTokens.output,
+							cacheRead: usageTokens.cacheRead,
+							cacheWrite: usageTokens.cacheWrite,
+							total: usageTokens.total,
+							...(usageTokens.cost > 0 ? { cost: usageTokens.cost } : {}),
+						},
+					}
+				: {}),
+		},
 		startedAt,
 		endedAt,
 		totalMessages,
@@ -364,6 +417,7 @@ function walkToEvidence(
 		assistantSummaries: walk.assistantSummaries,
 		turns: walk.turns,
 		toolCalls: walk.toolCalls,
+		usage: walk.usage,
 		touchedFiles: walk.touchedFiles,
 		decisions: walk.decisions,
 		compactionSummaries: walk.compactionSummaries,
@@ -488,6 +542,52 @@ function extractText(content: unknown): string {
 interface ExtractedToolCall {
 	name: string;
 	args: string;
+	rawArgs?: unknown;
+}
+
+function addUsage(
+	totals: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+		total: number;
+		cost: number;
+	},
+	usage: unknown,
+): void {
+	if (!usage || typeof usage !== "object") return;
+	const u = usage as {
+		input?: unknown;
+		output?: unknown;
+		cacheRead?: unknown;
+		cacheWrite?: unknown;
+		totalTokens?: unknown;
+		cost?: unknown;
+	};
+	const input = numberValue(u.input);
+	const output = numberValue(u.output);
+	const cacheRead = numberValue(u.cacheRead);
+	const cacheWrite = numberValue(u.cacheWrite);
+	totals.input += input;
+	totals.output += output;
+	totals.cacheRead += cacheRead;
+	totals.cacheWrite += cacheWrite;
+	totals.total +=
+		numberValue(u.totalTokens) || input + output + cacheRead + cacheWrite;
+	if (u.cost && typeof u.cost === "object") {
+		totals.cost += numberValue((u.cost as { total?: unknown }).total);
+	}
+}
+
+function numberValue(value: unknown): number {
+	return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function stripRawToolArgs(
+	toolCalls: ExtractedToolCall[],
+): Array<{ name: string; args: string }> {
+	return toolCalls.map(({ name, args }) => ({ name, args }));
 }
 
 function extractAssistantToolCalls(content: unknown): ExtractedToolCall[] {
@@ -500,6 +600,7 @@ function extractAssistantToolCalls(content: unknown): ExtractedToolCall[] {
 			out.push({
 				name: block.name,
 				args: summarizeToolArgs(block.name, block.arguments),
+				rawArgs: block.arguments,
 			});
 		}
 	}
@@ -532,16 +633,74 @@ function recordTouchedFiles(
 	touched: SessionEvidence["touchedFiles"],
 ): void {
 	const kind = detectToolKind(call.name);
-	if (!kind) return;
-	const path = extractPathFromArgs(call.args);
+	if (kind !== "write" && kind !== "edit") return;
+	const path =
+		extractPathFromRawArgs(call.rawArgs) ?? extractPathFromArgs(call.args);
 	if (!path) return;
-	touched.push({ path, action: kind });
+	const diff = buildEditStyleDiff(path, call);
+	touched.push({ path, action: kind, ...(diff ? { diff } : {}) });
 }
 
 /**
  * Extract a file path from a tool-call arg summary.
  * Handles JSON double-quoted, JSON single-quoted, and unquoted word forms.
  */
+function extractCommandFromRawArgs(args: unknown): string | undefined {
+	if (!args || typeof args !== "object") return undefined;
+	const raw = (args as { command?: unknown }).command;
+	return typeof raw === "string" && raw.trim() ? raw.slice(0, 240) : undefined;
+}
+
+function extractPathFromRawArgs(args: unknown): string | undefined {
+	if (!args || typeof args !== "object") return undefined;
+	const rawPath =
+		(args as { path?: unknown; filePath?: unknown }).path ??
+		(args as { path?: unknown; filePath?: unknown }).filePath;
+	return typeof rawPath === "string" && rawPath.trim() ? rawPath : undefined;
+}
+
+const MAX_TOOL_DIFF_CHARS = 30_000;
+
+function buildEditStyleDiff(
+	path: string,
+	call: ExtractedToolCall,
+): string | undefined {
+	if (!call.rawArgs || typeof call.rawArgs !== "object") return undefined;
+	const args = call.rawArgs as { content?: unknown; edits?: unknown };
+	let diff: string | undefined;
+	try {
+		if (call.name === "write" && typeof args.content === "string") {
+			diff = generateUnifiedPatch(path, "", args.content);
+		}
+		if (call.name === "edit" && Array.isArray(args.edits)) {
+			diff = args.edits
+				.map((edit, index) => {
+					if (!edit || typeof edit !== "object") return "";
+					const e = edit as { oldText?: unknown; newText?: unknown };
+					if (typeof e.oldText !== "string" || typeof e.newText !== "string")
+						return "";
+					return generateUnifiedPatch(
+						`${path}#edit-${index + 1}`,
+						e.oldText,
+						e.newText,
+					);
+				})
+				.filter(Boolean)
+				.join("\n");
+		}
+	} catch (err) {
+		console.warn(`Failed to build edit diff for ${path}`, err);
+		return undefined;
+	}
+	if (!diff) return undefined;
+	const redacted = redactSecrets(diff);
+	if (redacted.length > MAX_TOOL_DIFF_CHARS) {
+		console.warn(`Truncated visual recap edit diff for ${path}`);
+		return `${redacted.slice(0, MAX_TOOL_DIFF_CHARS)}\n…diff truncated…`;
+	}
+	return redacted;
+}
+
 function extractPathFromArgs(argsSummary: string): string | undefined {
 	const candidates = [
 		/"((?:\\.|[^"\\])*)"/,

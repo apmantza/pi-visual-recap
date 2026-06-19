@@ -58,6 +58,23 @@ export interface SessionDecision {
 	rationale: string;
 }
 
+export interface SessionUsageSummary {
+	userPrompts: number;
+	assistantMessages: number;
+	toolResults: number;
+	totalToolCalls: number;
+	tools: Array<{ name: string; count: number }>;
+	bash: Array<{ command: string; count: number }>;
+	tokens?: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+		total: number;
+		cost?: number;
+	};
+}
+
 export interface SessionEvidence {
 	sourceKind: "current" | "tree" | "file";
 	sessionFile?: string;
@@ -72,9 +89,11 @@ export interface SessionEvidence {
 	assistantSummaries: string[];
 	turns: SessionTurn[];
 	toolCalls: Array<{ name: string; count: number }>;
+	usage?: SessionUsageSummary;
 	touchedFiles: Array<{
 		path: string;
 		action: "read" | "write" | "edit" | "bash";
+		diff?: string;
 	}>;
 	decisions: SessionDecision[];
 	compactionSummaries: string[];
@@ -168,6 +187,7 @@ export interface FileMapEntry {
 	additions: number;
 	deletions: number;
 	note?: string;
+	diff?: string;
 }
 
 export interface KeyChange {
@@ -198,6 +218,7 @@ export interface SessionTimelineItem {
 export type RecapSection =
 	| { type: "outcome"; markdown: string }
 	| { type: "diagram"; title: string; mermaid: string; summary?: string }
+	| { type: "session-usage"; usage: SessionUsageSummary }
 	| { type: "file-tree"; title?: string; entries: FileMapEntry[] }
 	| { type: "session-timeline"; items: SessionTimelineItem[] }
 	| { type: "review-notes"; risks: ReviewRisk[] };

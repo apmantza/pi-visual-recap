@@ -6,6 +6,7 @@ import type {
 	RecapSection,
 	ReviewRisk,
 	SessionTimelineItem,
+	SessionUsageSummary,
 } from "../schemas.ts";
 
 export function renderHtml(doc: RecapDocument): string {
@@ -156,6 +157,9 @@ export function renderHtml(doc: RecapDocument): string {
   .mermaid-viewport:active { cursor: grabbing; }
   .mermaid-canvas { transform-origin: 50% 50%; transition: transform 120ms ease; padding: 26px; }
   .mermaid-canvas svg { max-width: none; height: auto; display: block; }
+  .mermaid-canvas svg text, .mermaid-canvas svg .label, .mermaid-canvas svg .label span { fill: var(--fg) !important; color: var(--fg) !important; }
+  .mermaid-canvas svg .node rect, .mermaid-canvas svg .node polygon, .mermaid-canvas svg .node circle, .mermaid-canvas svg .node ellipse { fill: var(--panel-strong) !important; stroke: var(--line-strong) !important; }
+  .mermaid-canvas svg .edgePath path, .mermaid-canvas svg path.flowchart-link { stroke: var(--accent) !important; }
   .diagram-fallback { padding: 16px; }
   noscript .diagram-source { margin: 12px; }
   .diagram-source { max-height: 260px; }
@@ -176,6 +180,9 @@ export function renderHtml(doc: RecapDocument): string {
   .bar { flex: 1; height: 8px; overflow: hidden; border-radius: 999px; background: var(--panel-recessed); display: flex; }
   .bar-add { background: var(--ok); }
   .bar-del { background: var(--danger); }
+  .file-diff { margin-top: 12px; border: 1px solid var(--line); border-radius: 13px; overflow: hidden; background: var(--panel-recessed); }
+  .file-diff summary { cursor: pointer; padding: 9px 11px; color: var(--accent-3); font-size: 0.83rem; font-weight: 750; }
+  .diff-pre { max-height: 320px; margin: 0; padding: 12px; overflow: auto; border-top: 1px solid var(--line); color: var(--fg); font-size: 0.78rem; line-height: 1.45; white-space: pre; }
   .badge { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 28px; padding: 0 9px; border-radius: 999px; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.04em; border: 1px solid transparent; }
   .badge-added { color: var(--ok); background: var(--accent-2-soft); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
   .badge-modified { color: var(--warn); background: rgba(180, 83, 9, 0.10); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
@@ -200,6 +207,13 @@ export function renderHtml(doc: RecapDocument): string {
   .timeline-role { color: var(--accent-3); font-size: 0.76rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; padding-top: 4px; }
   .timeline-body { border: 1px solid var(--line); border-radius: 16px; padding: 13px 15px; background: var(--panel-recessed); }
   .timeline-body p { margin: 5px 0 0; color: var(--muted); }
+  .usage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .usage-card { border: 1px solid var(--line); border-radius: 16px; background: var(--panel-recessed); padding: 15px; }
+  .usage-card strong { display: block; font-size: 1.5rem; letter-spacing: -0.03em; }
+  .usage-card span { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; }
+  .tool-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .tool-list li { display: grid; grid-template-columns: 1fr auto; gap: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 9px 11px; background: var(--panel-recessed); color: var(--muted); }
+  .tool-list code { color: var(--fg); overflow-wrap: anywhere; }
   .followups { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
   .followups li { border: 1px solid var(--line); border-radius: 16px; padding: 13px 15px 13px 42px; background: var(--panel-recessed); position: relative; color: var(--muted); }
   .followups li::before { content: "□"; position: absolute; left: 16px; color: var(--accent-3); }
@@ -500,8 +514,12 @@ function renderSectionNav(doc: RecapDocument): string {
 	const links = [
 		["#overview", "Overview"] as const,
 		...sectionLinks,
-		doc.keyChanges.length > 0 ? (["#key-changes", "Key changes"] as const) : undefined,
-		doc.followUps.length > 0 ? (["#follow-ups", "Follow-ups"] as const) : undefined,
+		doc.keyChanges.length > 0
+			? (["#key-changes", "Key changes"] as const)
+			: undefined,
+		doc.followUps.length > 0
+			? (["#follow-ups", "Follow-ups"] as const)
+			: undefined,
 	].filter((link): link is NavLink => Boolean(link));
 	return `<nav class="nav" aria-label="Recap sections">${links
 		.map(([href, label]) => `<a href="${href}">${escape(label)}</a>`)
@@ -523,6 +541,13 @@ function renderSection(section: RecapSection, index: number): string {
 				"Architecture",
 				section.title,
 				renderDiagram(section.mermaid, section.summary, index),
+			);
+		case "session-usage":
+			return renderCard(
+				index,
+				"Session",
+				"Tool and token usage",
+				renderSessionUsage(section.usage),
 			);
 		case "file-tree":
 			return renderCard(
@@ -559,6 +584,8 @@ function sectionHasContent(section: RecapSection): boolean {
 			return section.markdown.trim().length > 0;
 		case "diagram":
 			return section.mermaid.trim().length > 0;
+		case "session-usage":
+			return section.usage.totalToolCalls > 0 || section.usage.userPrompts > 0;
 		case "file-tree":
 			return section.entries.length > 0;
 		case "session-timeline":
@@ -618,6 +645,47 @@ function renderDiagram(
 </div>`;
 }
 
+function renderSessionUsage(usage: SessionUsageSummary): string {
+	const tokens = usage.tokens;
+	const cards = [
+		usageCard(String(usage.userPrompts), "User prompts"),
+		usageCard(String(usage.totalToolCalls), "Tool calls"),
+		usageCard(String(usage.assistantMessages), "Assistant turns"),
+		usageCard(tokens ? tokens.total.toLocaleString() : "—", "Total tokens"),
+		usageCard(
+			tokens?.cost ? `$${tokens.cost.toFixed(4)}` : "—",
+			"Estimated cost",
+		),
+	];
+	const tools =
+		usage.tools.length > 0
+			? `<h3>Registered tools</h3><ul class="tool-list">${usage.tools
+					.map(
+						(tool) =>
+							`<li><code>${escape(tool.name)}</code><strong>${tool.count}</strong></li>`,
+					)
+					.join("")}</ul>`
+			: "";
+	const bash =
+		usage.bash.length > 0
+			? `<h3>Bash commands</h3><ul class="tool-list">${usage.bash
+					.slice(0, 12)
+					.map(
+						(cmd) =>
+							`<li><code>${escape(cmd.command)}</code><strong>${cmd.count}</strong></li>`,
+					)
+					.join("")}</ul>`
+			: "";
+	const tokenDetail = tokens
+		? `<p class="prose">Tokens: ${tokens.input.toLocaleString()} input, ${tokens.output.toLocaleString()} output, ${tokens.cacheRead.toLocaleString()} cache read, ${tokens.cacheWrite.toLocaleString()} cache write.</p>`
+		: `<p class="prose">Token usage was not present in this session file.</p>`;
+	return `<div class="usage-grid">${cards.join("")}</div>${tokenDetail}${tools}${bash}`;
+}
+
+function usageCard(value: string, label: string): string {
+	return `<div class="usage-card"><strong>${escape(value)}</strong><span>${escape(label)}</span></div>`;
+}
+
 function renderFileGallery(entries: FileMapEntry[]): string {
 	if (entries.length === 0)
 		return `<p class="prose">No changed files were captured.</p>`;
@@ -635,10 +703,14 @@ function renderFileCard(entry: FileMapEntry): string {
 	const addPct = total === 0 ? 0 : Math.round((entry.additions / total) * 100);
 	const delPct = total === 0 ? 0 : 100 - addPct;
 	const searchText = `${entry.path} ${entry.status} ${entry.note ?? ""}`;
+	const diff = entry.diff
+		? `<details class="file-diff"><summary>Show diff</summary><pre class="diff-pre"><code>${escape(entry.diff)}</code></pre></details>`
+		: "";
 	return `<article class="file-card" data-file-card="${escapeAttr(searchText)}">
   <div class="file-top"><code class="path">${escape(entry.path)}</code><span class="badge ${badge.className}">${escape(badge.label)}</span></div>
   ${entry.note ? `<div class="note">${escape(entry.note)}</div>` : ""}
   <div class="delta"><span>+${entry.additions}</span><div class="bar"><span class="bar-add" style="width:${addPct}%"></span><span class="bar-del" style="width:${delPct}%"></span></div><span>−${entry.deletions}</span></div>
+  ${diff}
 </article>`;
 }
 
@@ -704,6 +776,8 @@ function sectionTitle(section: RecapSection): string {
 			return "Summary";
 		case "diagram":
 			return section.title;
+		case "session-usage":
+			return "Tool and token usage";
 		case "file-tree":
 			return section.title ?? "Changed files";
 		case "session-timeline":

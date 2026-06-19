@@ -78,9 +78,118 @@ describe("renderHtml", () => {
 
 		expect(html).toContain("<noscript>");
 		expect(html).toContain("flowchart TD");
-		expect(html).toContain('<h3 class="diagram-title">Interactive Mermaid diagram</h3>');
+		expect(html).toContain(
+			'<h3 class="diagram-title">Interactive Mermaid diagram</h3>',
+		);
 		expect(html).toContain("width:100%");
 		expect(html).toContain("width:0%");
+	});
+
+	it("escapes diff content in the file disclosure", () => {
+		const html = renderHtml(
+			doc({
+				sections: [
+					{
+						type: "file-tree",
+						entries: [
+							{
+								path: "src/example.ts",
+								status: "modified",
+								additions: 1,
+								deletions: 1,
+								diff: 'const greeting = "<script>alert(1)</script>";\n-api_key=sklive_1234567890abcdef',
+							},
+						],
+					},
+				],
+			}),
+		);
+
+		expect(html).not.toContain("<script>alert(1)</script>");
+		expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+	});
+
+	it("shows dashes for session usage without token metadata", () => {
+		const html = renderHtml(
+			doc({
+				source: "pi-session",
+				sections: [
+					{
+						type: "session-usage",
+						usage: {
+							userPrompts: 0,
+							assistantMessages: 0,
+							toolResults: 0,
+							totalToolCalls: 0,
+							tools: [],
+							bash: [],
+						},
+					},
+				],
+			}),
+		);
+
+		expect(html).toContain("Token usage was not present");
+		expect(html).toContain("—</strong><span>Estimated cost");
+	});
+
+	it("renders session usage and readable Mermaid overrides", () => {
+		const html = renderHtml(
+			doc({
+				source: "pi-session",
+				sections: [
+					{
+						type: "session-usage",
+						usage: {
+							userPrompts: 3,
+							assistantMessages: 4,
+							toolResults: 5,
+							totalToolCalls: 6,
+							tools: [{ name: "bash", count: 2 }],
+							bash: [{ command: "npm test", count: 1 }],
+							tokens: {
+								input: 10,
+								output: 20,
+								cacheRead: 30,
+								cacheWrite: 40,
+								total: 100,
+							},
+						},
+					},
+				],
+			}),
+		);
+
+		expect(html).toContain("Tool and token usage");
+		expect(html).toContain("npm test");
+		expect(html).toContain("Total tokens");
+		expect(html).toContain(".mermaid-canvas svg text");
+		expect(html).toContain("fill: var(--fg) !important");
+	});
+
+	it("renders a show diff disclosure for file entries with diffs", () => {
+		const html = renderHtml(
+			doc({
+				sections: [
+					{
+						type: "file-tree",
+						entries: [
+							{
+								path: "src/example.ts",
+								status: "modified",
+								additions: 1,
+								deletions: 1,
+								diff: "--- a/src/example.ts\n+++ b/src/example.ts\n@@\n-old\n+new",
+							},
+						],
+					},
+				],
+			}),
+		);
+
+		expect(html).toContain("Show diff");
+		expect(html).toContain("diff-pre");
+		expect(html).toContain("+new");
 	});
 
 	it("keeps dangerous SVG elements in the client sanitizer blocklist", () => {

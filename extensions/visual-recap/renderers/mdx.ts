@@ -39,6 +39,12 @@ export function renderMdx(doc: RecapDocument): string {
 				);
 				lines.push("");
 				break;
+			case "session-usage":
+				lines.push("## Tool and token usage");
+				lines.push("");
+				lines.push(`<SessionUsage usage={${jsonInline(section.usage)}} />`);
+				lines.push("");
+				break;
 			case "file-tree":
 				lines.push(`## ${section.title ?? "Changed files"}`);
 				lines.push("");
@@ -58,6 +64,10 @@ export function renderMdx(doc: RecapDocument): string {
 				lines.push(`<ReviewNotes risks={${jsonInline(section.risks)}} />`);
 				lines.push("");
 				break;
+			default: {
+				const _exhaustive: never = section;
+				throw new Error(`Unsupported recap section: ${String(_exhaustive)}`);
+			}
 		}
 	}
 

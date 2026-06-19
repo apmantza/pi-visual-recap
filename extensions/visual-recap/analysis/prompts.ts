@@ -1,5 +1,6 @@
 // Build prompts for any evidence type, plus RecapDocument coercion.
 import type {
+	FileMapEntry,
 	KeyChange,
 	RecapDocument,
 	RecapEvidence,
@@ -123,6 +124,11 @@ function buildSessionPrompt(
 	const summary = summarizeSessionForPrompt(s);
 	const treeSummary = renderTreeSummary(s);
 	const splitPrompt = renderSplitPrompt(s);
+	const changedFiles = s.touchedFiles
+		.filter((f) => f.action === "write" || f.action === "edit")
+		.slice(0, 40)
+		.map((f) => `- [${f.action}] ${f.path}`)
+		.join("\n");
 	const data = [
 		`Target: ${targetLabel}`,
 		`Source: Pi session`,
@@ -143,13 +149,8 @@ function buildSessionPrompt(
 			? s.toolCalls.map((t) => `- ${t.name}: ${t.count}`).join("\n")
 			: "(none)",
 		"",
-		"Files touched:",
-		s.touchedFiles.length > 0
-			? s.touchedFiles
-					.slice(0, 40)
-					.map((f) => `- [${f.action}] ${f.path}`)
-					.join("\n")
-			: "(no files touched via write/edit)",
+		"Files changed:",
+		changedFiles || "(no files changed via write/edit)",
 		"",
 		"Timeline (truncated):",
 		s.turns.length > 0
@@ -202,12 +203,14 @@ function wrapEvidence(data: string): string {
 }
 
 function outputInterface(mode: "code" | "session"): string {
-	const extra = mode === "code"
-		? "  fileMap: Array<{ path: string; status: string; additions: number; deletions: number; note?: string }>;"
-		: "  timeline: Array<{ index: number; role: 'user' | 'assistant' | 'tool' | 'compaction' | 'branch'; title: string; detail?: string }>;";
-	const outcome = mode === "code"
-		? "  outcome: string;        // 1-3 paragraphs of what changed and why"
-		: "  outcome: string;        // 1-3 paragraphs of what the session accomplished";
+	const extra =
+		mode === "code"
+			? "  fileMap: Array<{ path: string; status: string; additions: number; deletions: number; note?: string }>;"
+			: "  timeline: Array<{ index: number; role: 'user' | 'assistant' | 'tool' | 'compaction' | 'branch'; title: string; detail?: string }>;";
+	const outcome =
+		mode === "code"
+			? "  outcome: string;        // 1-3 paragraphs of what changed and why"
+			: "  outcome: string;        // 1-3 paragraphs of what the session accomplished";
 	return [
 		"```ts",
 		"interface Output {",
@@ -342,15 +345,28 @@ export function coerceRecapDocument(
 	if (!parsed) {
 		return buildFallbackDocument(raw, fallback, model, evidence);
 	}
-	const fileMap = Array.isArray(parsed.fileMap)
-		? parsed.fileMap.map((entry: any) => ({
-				path: String(entry.path ?? ""),
-				status: String(entry.status ?? "modified") as any,
-				additions: Number(entry.additions ?? 0),
-				deletions: Number(entry.deletions ?? 0),
-				note: entry.note ? String(entry.note) : undefined,
-			}))
+	const evidenceFileMap = new Map(
+		evidence.fileMap.map((entry) => [entry.path, entry]),
+	);
+	const parsedFileMap: FileMapEntry[] = Array.isArray(parsed.fileMap)
+		? parsed.fileMap.map((entry: any) => {
+				const path = String(entry.path ?? "");
+				const evidenceEntry = evidenceFileMap.get(path);
+				const diff = entry.diff ? String(entry.diff) : evidenceEntry?.diff;
+				return {
+					path,
+					status: String(entry.status ?? "modified") as any,
+					additions: Number(entry.additions ?? evidenceEntry?.additions ?? 0),
+					deletions: Number(entry.deletions ?? evidenceEntry?.deletions ?? 0),
+					note: entry.note ? String(entry.note) : evidenceEntry?.note,
+					...(diff ? { diff } : {}),
+				};
+			})
 		: evidence.fileMap;
+	const fileMap =
+		evidence.source === "pi-session"
+			? parsedFileMap.filter((entry) => evidenceFileMap.has(entry.path))
+			: parsedFileMap;
 	const keyChanges: KeyChange[] = Array.isArray(parsed.keyChanges)
 		? parsed.keyChanges.map((entry: any) => ({
 				path: String(entry.path ?? ""),
@@ -394,6 +410,9 @@ export function coerceRecapDocument(
 				String(parsed.outcome ?? "").trim() || "_(no outcome narrative)_",
 		},
 	];
+	if (evidence.session?.usage) {
+		sections.push({ type: "session-usage", usage: evidence.session.usage });
+	}
 	if (parsed.diagram) {
 		sections.push({
 			type: "diagram",
@@ -447,6 +466,9 @@ function buildFallbackDocument(
 	const sections: RecapSection[] = [
 		{ type: "outcome", markdown: raw.trim() || "_(model returned no output)_" },
 	];
+	if (evidence.session?.usage) {
+		sections.push({ type: "session-usage", usage: evidence.session.usage });
+	}
 	if (evidence.fileMap.length > 0) {
 		sections.push({
 			type: "file-tree",
