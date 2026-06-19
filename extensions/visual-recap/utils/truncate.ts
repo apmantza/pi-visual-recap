@@ -16,3 +16,8 @@ export function truncateMiddle(
 		truncated: true,
 	};
 }
+
+// Convenience: keep just the truncated text. Used by every collector.
+export function clamp(text: string, maxBytes: number): string {
+	return truncateMiddle(text, maxBytes).text;
+}

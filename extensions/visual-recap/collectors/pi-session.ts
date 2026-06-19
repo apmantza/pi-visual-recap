@@ -190,9 +190,16 @@ function resolveSessionPath(
 	// Must be a real file.
 	if (!existsSync(absolute)) return null;
 
-	// Prefer paths inside the agent's session dir, but allow absolute paths
-	// that the user explicitly typed (e.g. a session they saved elsewhere).
-	// The main defence is the ".."-segment rejection + must-exist check.
+	// Only allow session files inside the agent's sessions directory. This
+	// prevents passing any readable file path on disk and limits reads to
+	// the place where session JSONLs actually live.
+	const sessionRoot = path.resolve(ctx.cwd, ".pi", "sessions");
+	if (
+		!absolute.startsWith(sessionRoot + path.sep) &&
+		absolute !== sessionRoot
+	) {
+		return null;
+	}
 	return absolute;
 }
 
@@ -325,7 +332,9 @@ function walkBranch(branch: SessionEntry[]): BranchWalk {
 			for (const call of toolCalls) {
 				toolCallCounts.set(call.name, (toolCallCounts.get(call.name) ?? 0) + 1);
 				if (call.name === "bash") {
-					const command = extractCommandFromRawArgs(call.rawArgs) ?? call.args;
+					const command = redactSecrets(
+						extractCommandFromRawArgs(call.rawArgs) ?? call.args,
+					);
 					bashCallCounts.set(command, (bashCallCounts.get(command) ?? 0) + 1);
 				}
 				recordTouchedFiles(call, touchedFiles);

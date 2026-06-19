@@ -3,6 +3,7 @@ import type { RecapTarget } from "../schemas.ts";
 // GitHub PR evidence collector. Prefers `gh` (works for private repos when authed),
 // falls back to the public REST API for public PRs.
 import { tryExec } from "../utils/exec.ts";
+import { clamp } from "../utils/truncate.ts";
 
 export interface CollectPrOptions {
 	cwd: string;
@@ -212,13 +213,19 @@ async function collectViaRest(
 		"curl",
 		[
 			"-sSL",
-			"-H",
-			headers.join("\r\n"),
+			...headers.flatMap((h) => ["-H", h]),
 			`https://api.github.com/repos/${repoSlug}/pulls/${prNumber}`,
 		],
 		options,
 	);
-	if (!meta || meta.exitCode !== 0) return null;
+	if (!meta || meta.exitCode !== 0) {
+		if (meta) {
+			console.warn(
+				`[pi-visual-recap] REST pr meta ${repoSlug}#${prNumber} failed: ${meta.stderr || "no stderr"}`,
+			);
+		}
+		return null;
+	}
 	let parsed: any;
 	try {
 		parsed = JSON.parse(meta.stdout);
@@ -231,12 +238,18 @@ async function collectViaRest(
 		"curl",
 		[
 			"-sSL",
-			"-H",
-			headers.join("\r\n"),
+			...headers.flatMap((h) => ["-H", h]),
 			`https://github.com/${repoSlug}/pull/${prNumber}.diff`,
 		],
 		{ ...options, maxBuffer: options.maxDiffBytes * 2 },
 	);
+	if (!diff || diff.exitCode !== 0) {
+		if (diff) {
+			console.warn(
+				`[pi-visual-recap] REST pr diff ${repoSlug}#${prNumber} failed: ${diff.stderr || "no stderr"}`,
+			);
+		}
+	}
 	const diffText = diff?.stdout ?? "";
 	const files = parseUnifiedDiff(diffText);
 
@@ -349,12 +362,4 @@ function parseUnifiedDiff(diffText: string): ChangedFile[] {
 	return files;
 }
 
-function clamp(text: string, maxBytes: number): string {
-	if (Buffer.byteLength(text, "utf8") <= maxBytes) return text;
-	const headBytes = Math.floor(maxBytes * 0.6);
-	const tailBytes = maxBytes - headBytes;
-	const head = text.slice(0, headBytes);
-	const tail = text.slice(text.length - tailBytes);
-	const omitted = Buffer.byteLength(text, "utf8") - headBytes - tailBytes;
-	return `${head}\n\n[... ${omitted} bytes of diff omitted for context budget ...]\n\n${tail}`;
-}
+// clamp() lives in ../utils/truncate.ts and is imported at the top of this file.

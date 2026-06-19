@@ -34,6 +34,7 @@ import type {
 	VisualRecapOptions,
 } from "./schemas.ts";
 import { safeJoin, slugify, timestampSlug } from "./utils/paths.ts";
+import { redactSecrets } from "./utils/secret-redactor.ts";
 
 const COMMAND_NAME = "visual-recap";
 const TOOL_NAME = "visual_recap";
@@ -125,21 +126,35 @@ export async function generateRecap(
 	const evidenceFiles: Record<string, string> = {};
 	if (merged.includeEvidence) {
 		if (evidence.source === "git" || evidence.source === "github-pr") {
-			evidenceFiles["diff.patch"] = evidence.diffText || "(no diff captured)";
-			evidenceFiles["files.json"] = JSON.stringify(evidence.fileMap, null, 2);
+			evidenceFiles["diff.patch"] = redactSecrets(
+				evidence.diffText || "(no diff captured)",
+			);
+			evidenceFiles["files.json"] = JSON.stringify(
+				redactSecrets(JSON.stringify(evidence.fileMap, null, 2)),
+				null,
+				2,
+			);
 			if (evidence.commits.length > 0) {
 				evidenceFiles["commits.json"] = JSON.stringify(
-					evidence.commits,
+					redactSecrets(JSON.stringify(evidence.commits, null, 2)),
 					null,
 					2,
 				);
 			}
 		}
 		if (evidence.source === "github-pr" && evidence.pr) {
-			evidenceFiles["pr.json"] = JSON.stringify(evidence.pr, null, 2);
+			evidenceFiles["pr.json"] = JSON.stringify(
+				redactSecrets(JSON.stringify(evidence.pr, null, 2)),
+				null,
+				2,
+			);
 		}
 		if (evidence.source === "pi-session" && evidence.session) {
-			evidenceFiles["session.json"] = JSON.stringify(evidence.session, null, 2);
+			evidenceFiles["session.json"] = JSON.stringify(
+				redactSecrets(JSON.stringify(evidence.session, null, 2)),
+				null,
+				2,
+			);
 		}
 	}
 
