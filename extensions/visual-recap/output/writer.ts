@@ -18,6 +18,9 @@ export interface WriteArtifactResult {
 
 const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
 const MAX_NAME_LENGTH = 100;
+const LOCK_TIMEOUT_MS = 10_000;
+const LOCK_RETRY_MS = 50;
+const LOCK_STALE_MS = 5 * 60 * 1000;
 
 function assertSafeSegment(value: string, label: string): void {
 	if (!value || value.length > MAX_NAME_LENGTH) {
@@ -54,7 +57,47 @@ function isNotFoundError(err: unknown): boolean {
 	return errorCode(err) === "ENOENT";
 }
 
-async function replaceDirectory(preparedDir: string, finalDir: string): Promise<void> {
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function removeStaleLock(lockDir: string): Promise<boolean> {
+	try {
+		const stat = await fs.stat(lockDir);
+		if (Date.now() - stat.mtimeMs < LOCK_STALE_MS) return false;
+		await fs.rm(lockDir, { recursive: true, force: true });
+		return true;
+	} catch (err) {
+		if (isNotFoundError(err)) return true;
+		throw err;
+	}
+}
+
+async function acquireDirectoryLock(lockDir: string): Promise<string> {
+	const started = Date.now();
+	while (Date.now() - started < LOCK_TIMEOUT_MS) {
+		try {
+			await fs.mkdir(lockDir);
+			return lockDir;
+		} catch (err) {
+			if (!isAlreadyExistsError(err)) throw err;
+			if (await removeStaleLock(lockDir)) continue;
+			await sleep(LOCK_RETRY_MS);
+		}
+	}
+	throw new Error(`Timed out waiting for recap artifact lock: ${lockDir}`);
+}
+
+async function releaseDirectoryLock(lockDir: string): Promise<void> {
+	await fs.rm(lockDir, { recursive: true, force: true }).catch((err) => {
+		console.warn(`Failed to release recap artifact lock ${lockDir}`, err);
+	});
+}
+
+async function replaceDirectory(
+	preparedDir: string,
+	finalDir: string,
+): Promise<void> {
 	const backupDir = `${finalDir}.bak-${process.pid}-${Date.now()}-${randomUUID()}`;
 	let movedExisting = false;
 	try {
@@ -72,7 +115,7 @@ async function replaceDirectory(preparedDir: string, finalDir: string): Promise<
 				await fs.rename(backupDir, finalDir);
 			} catch (restoreErr) {
 				throw new Error(
-					`Failed to publish ${finalDir} and restore previous artifact: ${String(restoreErr)}`,
+					`Failed to publish ${finalDir}; previous artifact remains at backup ${backupDir} and restore failed: ${String(restoreErr)}`,
 					{ cause: err },
 				);
 			}
@@ -82,7 +125,10 @@ async function replaceDirectory(preparedDir: string, finalDir: string): Promise<
 
 	if (movedExisting) {
 		await fs.rm(backupDir, { recursive: true, force: true }).catch((err) => {
-			console.warn(`Failed to remove old recap artifact backup ${backupDir}`, err);
+			console.warn(
+				`Failed to remove old recap artifact backup ${backupDir}`,
+				err,
+			);
 		});
 	}
 }
@@ -96,34 +142,38 @@ export async function writeArtifact(
 	await fs.mkdir(baseAbs, { recursive: true });
 	let finalDir = safeJoinUnder(baseAbs, slug);
 	let writeDir = finalDir;
-
-	if (overwrite) {
-		writeDir = await fs.mkdtemp(safeJoinUnder(baseAbs, `${slug}.tmp-`));
-	} else {
-		let counter = 0;
-		while (counter < 1000) {
-			const candidateSlug = counter === 0 ? slug : `${slug}-${counter}`;
-			const candidate = safeJoinUnder(baseAbs, candidateSlug);
-			try {
-				await fs.mkdir(candidate);
-				finalDir = candidate;
-				writeDir = candidate;
-				break;
-			} catch (err) {
-				if (!isAlreadyExistsError(err)) {
-					throw err;
-				}
-				counter += 1;
-			}
-		}
-		if (counter >= 1000) {
-			throw new Error(`Too many recap artifacts with slug ${slug}`);
-		}
-	}
-
+	let lockDir: string | undefined;
 	const writtenRelative: string[] = [];
 	let published = false;
+
 	try {
+		if (overwrite) {
+			lockDir = await acquireDirectoryLock(
+				safeJoinUnder(baseAbs, `${slug}.lock`),
+			);
+			writeDir = await fs.mkdtemp(safeJoinUnder(baseAbs, `${slug}.tmp-`));
+		} else {
+			let counter = 0;
+			while (counter < 1000) {
+				const candidateSlug = counter === 0 ? slug : `${slug}-${counter}`;
+				const candidate = safeJoinUnder(baseAbs, candidateSlug);
+				try {
+					await fs.mkdir(candidate);
+					finalDir = candidate;
+					writeDir = candidate;
+					break;
+				} catch (err) {
+					if (!isAlreadyExistsError(err)) {
+						throw err;
+					}
+					counter += 1;
+				}
+			}
+			if (counter >= 1000) {
+				throw new Error(`Too many recap artifacts with slug ${slug}`);
+			}
+		}
+
 		if (evidenceFiles && Object.keys(evidenceFiles).length > 0) {
 			const evidenceDir = safeJoinUnder(writeDir, "evidence");
 			await fs.mkdir(evidenceDir, { recursive: true });
@@ -148,9 +198,20 @@ export async function writeArtifact(
 		}
 	} catch (err) {
 		if (overwrite && !published) {
-			await fs.rm(writeDir, { recursive: true, force: true }).catch(() => undefined);
+			await fs
+				.rm(writeDir, { recursive: true, force: true })
+				.catch((cleanupErr) => {
+					console.warn(
+						`Failed to remove temporary recap artifact ${writeDir}`,
+						cleanupErr,
+					);
+				});
 		}
 		throw err;
+	} finally {
+		if (lockDir) {
+			await releaseDirectoryLock(lockDir);
+		}
 	}
 
 	const written = writtenRelative.map((name) =>

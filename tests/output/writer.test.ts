@@ -99,6 +99,50 @@ describe("writeArtifact", () => {
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
+	it("overwrites a missing target directory", async () => {
+		const result = await writeArtifact({
+			baseDir: tmpDir,
+			slug: "missing-overwrite",
+			files: { "recap.md": "created" },
+			overwrite: true,
+		});
+
+		expect(path.basename(result.dir)).toBe("missing-overwrite");
+		expect(await fs.readFile(path.join(result.dir, "recap.md"), "utf8")).toBe(
+			"created",
+		);
+		expect(result.written.map((p) => path.basename(p))).toEqual(["recap.md"]);
+	});
+
+	it("serializes concurrent overwrites for the same slug", async () => {
+		await writeArtifact({
+			baseDir: tmpDir,
+			slug: "locked-slug",
+			files: { "recap.md": "initial" },
+		});
+
+		await Promise.all([
+			writeArtifact({
+				baseDir: tmpDir,
+				slug: "locked-slug",
+				files: { "recap.md": "first" },
+				overwrite: true,
+			}),
+			writeArtifact({
+				baseDir: tmpDir,
+				slug: "locked-slug",
+				files: { "recap.md": "second" },
+				overwrite: true,
+			}),
+		]);
+
+		const entries = await fs.readdir(tmpDir);
+		expect(entries).toEqual(["locked-slug"]);
+		expect(["first", "second"]).toContain(
+			await fs.readFile(path.join(tmpDir, "locked-slug", "recap.md"), "utf8"),
+		);
+	});
+
 	it("rejects unsafe path segments", async () => {
 		await expect(
 			writeArtifact({
