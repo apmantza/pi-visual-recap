@@ -279,17 +279,6 @@ ${sections.join("\n")}
     });
   }
 
-  const search = document.querySelector('[data-file-search]');
-  if (search) {
-    search.addEventListener('input', () => {
-      const query = search.value.trim().toLowerCase();
-      for (const card of document.querySelectorAll('[data-file-card]')) {
-        const haystack = (card.getAttribute('data-file-card') || '').toLowerCase();
-        card.setAttribute('data-hidden', query && !haystack.includes(query) ? 'true' : 'false');
-      }
-    });
-  }
-
   const shells = Array.from(document.querySelectorAll('[data-mermaid-shell]'));
   if (shells.length > 0) {
     loadMermaid()
@@ -454,25 +443,63 @@ ${sections.join("\n")}
     return styles.getPropertyValue(name).trim();
   }
 
-  function escapeHtml(value) {
-    return String(value).replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
+  // File-tab switching: clicking or arrowing through a tablist reveals the
+  // selected panel and hides the others in the same group. WAI-ARIA tablist
+  // semantics: Arrow keys move focus, Home/End jump to the ends, and the
+  // focused tab is the active one (roving tabindex).
+  function selectTab(group, target) {
+    let didActivate = false;
+    for (const sibling of document.querySelectorAll('.file-tab[data-group="' + group + '"]')) {
+      const isActive = sibling.getAttribute('data-target') === target;
+      sibling.classList.toggle('active', isActive);
+      sibling.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      sibling.setAttribute('tabindex', isActive ? '0' : '-1');
+      if (isActive) didActivate = true;
+    }
+    for (const panel of document.querySelectorAll('.file-diff-panel[data-group="' + group + '"]')) {
+      const isActive = panel.id === target;
+      panel.classList.toggle('active', isActive);
+      panel.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+    }
+    if (!didActivate) {
+      console.warn('Visual recap: tab target panel missing for', target);
+    }
   }
 
-  // File-tab switching: clicking a tab button reveals its target panel and
-  // hides the others in the same group.
+  function focusTab(tab, offset) {
+    const group = tab.getAttribute('data-group');
+    if (!group) return;
+    const tabs = Array.from(
+      document.querySelectorAll('.file-tab[data-group="' + group + '"]'),
+    );
+    if (tabs.length === 0) return;
+    const currentIndex = tabs.indexOf(tab);
+    const nextIndex = (currentIndex + offset + tabs.length) % tabs.length;
+    const next = tabs[nextIndex];
+    selectTab(group, next.getAttribute('data-target'));
+    next.focus();
+  }
+
   for (const tab of document.querySelectorAll('[data-group][data-target]')) {
     tab.addEventListener('click', () => {
       const group = tab.getAttribute('data-group');
       const target = tab.getAttribute('data-target');
       if (!group || !target) return;
-      for (const sibling of document.querySelectorAll('.file-tab[data-group="' + group + '"]')) {
-        sibling.classList.toggle('active', sibling === tab);
-        sibling.setAttribute('aria-selected', sibling === tab ? 'true' : 'false');
-      }
-      for (const panel of document.querySelectorAll('.file-diff-panel[data-group="' + group + '"]')) {
-        const isActive = panel.id === target;
-        panel.classList.toggle('active', isActive);
-        panel.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+      selectTab(group, target);
+    });
+    tab.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        focusTab(tab, 1);
+      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        focusTab(tab, -1);
+      } else if (event.key === 'Home') {
+        event.preventDefault();
+        focusTab(tab, -tabs.length);
+      } else if (event.key === 'End') {
+        event.preventDefault();
+        focusTab(tab, tabs.length - 1);
       }
     });
   }
@@ -727,44 +754,46 @@ function renderFileGallery(entries: FileMapEntry[]): string {
 		(e) => typeof e.diff === "string" && e.diff.length > 0,
 	);
 	const otherFiles = entries.filter((e) => !filesWithDiffs.includes(e));
-	const groupId = `files-${Math.random().toString(36).slice(2, 10)}`;
+	const groupId = `files-${renderGroupCounter++}`;
+	const tabButtons: string[] = [];
+	const tabPanels: string[] = [];
+	filesWithDiffs.forEach((entry, index) => {
+		const badge = badgeFor(entry.status);
+		const tabId = `${groupId}-tab-${index}`;
+		const panelId = `${groupId}-panel-${index}`;
+		const isActive = index === 0;
+		tabButtons.push(
+			`<button class="file-tab ${isActive ? "active" : ""}" role="tab" id="${tabId}" aria-selected="${isActive ? "true" : "false"}" aria-controls="${panelId}" data-target="${panelId}" data-group="${groupId}" tabindex="${isActive ? "0" : "-1"}">
+				<span class="file-tab-path">${escape(entry.path)}</span>
+				<span class="file-tab-meta">
+					<span class="badge ${badge.className}">${escape(badge.label)}</span>
+					<span class="file-tab-delta"><span class="add">+${entry.additions}</span><span class="del">−${entry.deletions}</span></span>
+				</span>
+			</button>`,
+		);
+		tabPanels.push(
+			`<article class="file-diff-panel ${isActive ? "active" : ""}" role="tabpanel" id="${panelId}" aria-labelledby="${tabId}" data-group="${groupId}" aria-hidden="${isActive ? "false" : "true"}" tabindex="0">
+				<header class="file-diff-head">
+					<div class="file-diff-path">
+						<code>${escape(entry.path)}</code>
+						<span class="badge ${badge.className}">${escape(badge.label)}</span>
+					</div>
+					<div class="file-diff-stats">
+						<span class="add">+${entry.additions}</span>
+						<span class="del">−${entry.deletions}</span>
+					</div>
+				</header>
+				<pre class="diff-pre"><code>${escape(entry.diff ?? "")}</code></pre>
+			</article>`,
+		);
+	});
 	const tabs =
 		filesWithDiffs.length > 0
 			? `<div class="file-tabs" role="tablist" aria-label="Changed files">
-				${filesWithDiffs
-					.map((entry, index) => {
-						const badge = badgeFor(entry.status);
-						const fileId = `${groupId}-${index}`;
-						return `<button class="file-tab ${index === 0 ? "active" : ""}" role="tab" aria-selected="${index === 0 ? "true" : "false"}" data-target="${fileId}" data-group="${groupId}">
-						<span class="file-tab-path">${escape(entry.path)}</span>
-						<span class="file-tab-meta">
-							<span class="badge ${badge.className}">${escape(badge.label)}</span>
-							<span class="file-tab-delta"><span class="add">+${entry.additions}</span><span class="del">−${entry.deletions}</span></span>
-						</span>
-					</button>`;
-					})
-					.join("")}
+				${tabButtons.join("")}
 			</div>
 			<div class="file-tab-panels">
-				${filesWithDiffs
-					.map((entry, index) => {
-						const fileId = `${groupId}-${index}`;
-						const badge = badgeFor(entry.status);
-						return `<article class="file-diff-panel ${index === 0 ? "active" : ""}" role="tabpanel" id="${fileId}" data-group="${groupId}" aria-hidden="${index === 0 ? "false" : "true"}">
-						<header class="file-diff-head">
-							<div class="file-diff-path">
-								<code>${escape(entry.path)}</code>
-								<span class="badge ${badge.className}">${escape(badge.label)}</span>
-							</div>
-							<div class="file-diff-stats">
-								<span class="add">+${entry.additions}</span>
-								<span class="del">−${entry.deletions}</span>
-							</div>
-						</header>
-						<pre class="diff-pre"><code>${escape(entry.diff ?? "")}</code></pre>
-					</article>`;
-					})
-					.join("")}
+				${tabPanels.join("")}
 			</div>`
 			: "";
 	const otherList =
@@ -777,6 +806,8 @@ function renderFileGallery(entries: FileMapEntry[]): string {
 	const header = `<div class="file-toolbar"><div class="prose">${entries.length} file${entries.length === 1 ? "" : "s"} changed.</div></div>`;
 	return `${header}${tabs}${otherList}`;
 }
+
+let renderGroupCounter = 0;
 
 function renderFileCard(entry: FileMapEntry): string {
 	const badge = badgeFor(entry.status);

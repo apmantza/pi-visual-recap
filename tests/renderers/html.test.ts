@@ -120,6 +120,72 @@ describe("renderHtml", () => {
 		expect(html).toContain("+new");
 	});
 
+	it("renders files without diffs as Other files cards", () => {
+		const html = renderHtml(
+			doc({
+				sections: [
+					{
+						type: "file-tree",
+						entries: [
+							{
+								path: "src/with-diff.ts",
+								status: "modified",
+								additions: 1,
+								deletions: 1,
+								diff: "--- a/x\n+++ b/x\n@@\n-old\n+new",
+							},
+							{
+								path: "src/no-diff.ts",
+								status: "modified",
+								additions: 2,
+								deletions: 0,
+							},
+						],
+					},
+				],
+			}),
+		);
+
+		expect(html).toContain("file-tabs");
+		expect(html).toContain("Other files");
+		expect(html).toContain("data-file-card=");
+		expect(html).toContain("src/no-diff.ts");
+	});
+
+	it("emits ARIA tablist attributes on the file diffs section", () => {
+		const html = renderHtml(
+			doc({
+				sections: [
+					{
+						type: "file-tree",
+						entries: [
+							{
+								path: "src/a.ts",
+								status: "modified",
+								additions: 1,
+								deletions: 0,
+								diff: "--- a/x\n+++ b/x\n@@\n+new",
+							},
+							{
+								path: "src/b.ts",
+								status: "added",
+								additions: 5,
+								deletions: 0,
+								diff: "--- a/x\n+++ b/x\n@@\n+more",
+							},
+						],
+					},
+				],
+			}),
+		);
+
+		expect(html).toContain('role="tablist"');
+		expect(html).toContain('aria-selected="true"');
+		expect(html).toContain('aria-selected="false"');
+		expect(html).toContain('aria-controls="');
+		expect(html).toContain('aria-labelledby="');
+	});
+
 	it("escapes diff content in the file disclosure", () => {
 		const html = renderHtml(
 			doc({
