@@ -35,6 +35,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Fail on known-vulnerable PRODUCTION deps (what actually ships to users
+      # via npm install --omit=dev). Scoped to high/critical to avoid blocking
+      # PRs on fix-less moderate advisories. DevDeps are excluded — they never
+      # reach users. This is the security gate that mirrors pi-lens.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
   test:
     name: Unit tests
     runs-on: ubuntu-latest
@@ -55,3 +62,29 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+  # Simulates the production install path: a user does `npm install
+  # --omit=dev` (or installs from a tarball), which means devDeps like
+  # @types/* are absent. This catches type errors that only surface when
+  # the build runs without the dev-only type packages — the same path
+  # that broke pi-mono with TS2688.
+  prod-install-build:
+    name: Production install build (--omit=dev, from source)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install production dependencies only
+        run: npm install --omit=dev --ignore-scripts --no-audit --no-fund
+
+      - name: TypeScript typecheck under --omit=dev
+        run: npm run typecheck:ext

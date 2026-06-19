@@ -61,7 +61,7 @@ describe("sanitizeErrorMessage", () => {
 		// Non-string inputs: must not throw.
 		["", ""],
 		["no path here", "no path here"],
-	])("sanitises %j", (input, expected) => {
+	])("sanitises %j", (input: string, expected: string) => {
 		expect(sanitizeErrorMessage(input)).toBe(expected);
 	});
 
@@ -70,7 +70,7 @@ describe("sanitizeErrorMessage", () => {
 		[undefined as unknown as string, "undefined"],
 		[123 as unknown as string, "123"],
 		[true as unknown as string, "true"],
-	])("does not throw on non-string %p", (input, expected) => {
+	])("does not throw on non-string %p", (input: string, expected: string) => {
 		expect(sanitizeErrorMessage(input)).toBe(expected);
 	});
 });
