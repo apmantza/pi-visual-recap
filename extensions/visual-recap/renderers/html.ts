@@ -787,14 +787,26 @@ function renderFileGallery(
 	const otherFiles: FileMapEntry[] = [];
 	const seen = new Set<string>();
 	for (const entry of entries) {
-		if (seen.has(entry.path)) continue;
-		seen.add(entry.path);
 		const hasDiff = typeof entry.diff === "string" && entry.diff.length > 0;
-		if (hasDiff) {
-			filesWithDiffs.push(entry);
-		} else {
+		if (!hasDiff) {
+			if (seen.has(entry.path)) continue;
+			seen.add(entry.path);
 			otherFiles.push(entry);
+			continue;
 		}
+		// Concatenate diffs for duplicate paths so we never silently drop a
+		// second change to the same file. Counts are summed across entries.
+		const existing = filesWithDiffs.find((e) => e.path === entry.path);
+		if (existing) {
+			existing.diff = existing.diff
+				? `${existing.diff}\n${entry.diff ?? ""}`
+				: entry.diff;
+			existing.additions += entry.additions;
+			existing.deletions += entry.deletions;
+			continue;
+		}
+		seen.add(entry.path);
+		filesWithDiffs.push(entry);
 	}
 	const tabFiles =
 		keySet.size > 0
@@ -859,7 +871,7 @@ function renderFileGallery(
 			: "";
 	const note =
 		keySet.size > 0 && tabFiles.length === 0
-			? `<p class="key-changes-empty">No key changes were called out, so no diff previews are shown. Listed files are below.</p>`
+			? `<p class="key-changes-empty">Key changes were identified but none matched a file with a diff in this recap. Listed files are below.</p>`
 			: "";
 	const header = `<div class="file-toolbar"><div class="prose">${entries.length} file${entries.length === 1 ? "" : "s"} changed — ${tabFiles.length} highlighted as key changes.</div></div>`;
 	return `${note}${header}${tabs}${otherList}`;

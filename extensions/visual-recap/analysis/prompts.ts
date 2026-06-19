@@ -343,6 +343,16 @@ export interface RecapFallback {
 	repoRoot?: string;
 }
 
+function fallbackProps(fallback: RecapFallback): {
+	project?: string;
+	repoRoot?: string;
+} {
+	return {
+		...(fallback.project ? { project: fallback.project } : {}),
+		...(fallback.repoRoot ? { repoRoot: fallback.repoRoot } : {}),
+	};
+}
+
 export function coerceRecapDocument(
 	raw: string,
 	fallback: RecapFallback,
@@ -450,8 +460,7 @@ export function coerceRecapDocument(
 		title: String(parsed.title ?? fallback.title).slice(0, 100),
 		brief: String(parsed.brief ?? fallback.brief),
 		target: fallback.target,
-		...(fallback.project ? { project: fallback.project } : {}),
-		...(fallback.repoRoot ? { repoRoot: fallback.repoRoot } : {}),
+		...fallbackProps(fallback),
 		generatedAt: new Date().toISOString(),
 		model,
 		sections,
@@ -505,8 +514,7 @@ function buildFallbackDocument(
 		title: fallback.title,
 		brief: fallback.brief,
 		target: fallback.target,
-		...(fallback.project ? { project: fallback.project } : {}),
-		...(fallback.repoRoot ? { repoRoot: fallback.repoRoot } : {}),
+		...fallbackProps(fallback),
 		generatedAt: new Date().toISOString(),
 		model,
 		sections,

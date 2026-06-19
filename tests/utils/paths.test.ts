@@ -47,4 +47,9 @@ describe("basenameOf", () => {
 	it("returns the input when there is no separator", () => {
 		expect(basenameOf("standalone")).toBe("standalone");
 	});
+
+	it("returns an empty string for a root path", () => {
+		expect(basenameOf("/")).toBe("");
+		expect(basenameOf("")).toBe("");
+	});
 });

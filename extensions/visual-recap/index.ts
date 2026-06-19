@@ -278,6 +278,7 @@ export function registerVisualRecapCommand(pi: ExtensionAPI): void {
 				ctx.ui.setStatus("visual-recap", result.document.title);
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
+				console.error(`[pi-visual-recap] ${message}`);
 				if (ctx.hasUI)
 					ctx.ui.notify(`Visual recap failed: ${message}`, "error");
 			}

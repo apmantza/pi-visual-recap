@@ -242,6 +242,37 @@ describe("renderHtml", () => {
 		expect(html).not.toContain("pill-repo");
 	});
 
+	it("merges duplicate file paths instead of silently dropping the second diff", () => {
+		const html = renderHtml(
+			doc({
+				sections: [
+					{
+						type: "file-tree",
+						entries: [
+							{
+								path: "src/x.ts",
+								status: "modified",
+								additions: 1,
+								deletions: 0,
+								diff: "@@ -1 +1 @@\n+first edit",
+							},
+							{
+								path: "src/x.ts",
+								status: "modified",
+								additions: 2,
+								deletions: 1,
+								diff: "@@ -10 +10 @@\n+second edit",
+							},
+						],
+					},
+				],
+			}),
+		);
+		// Both diff bodies appear in the rendered panel — neither was dropped.
+		expect(html).toContain("+first edit");
+		expect(html).toContain("+second edit");
+	});
+
 	it("falls back to all files-with-diffs when keyChanges is empty", () => {
 		const html = renderHtml(
 			doc({
@@ -295,7 +326,7 @@ describe("renderHtml", () => {
 				],
 			}),
 		);
-		expect(html).toContain("No key changes were called out");
+		expect(html).toContain("Key changes were identified but none matched");
 		expect(html).toContain("Other files");
 	});
 
@@ -364,11 +395,6 @@ describe("renderHtml", () => {
 		// src/other.ts goes to Other files, no tab, no diff body in panel
 		expect(html).not.toMatch(/file-tab-path[^>]*>\s*src\/other\.ts/);
 		expect(html).toContain("Other files");
-	});
-
-	it("highlights diff lines: green for added, red for removed", () => {
-		// Covered by "highlights diff lines: green for added, red for removed,
-		// neutral for context and metadata" above.
 	});
 
 	it("shows dashes for session usage without token metadata", () => {
