@@ -46,16 +46,18 @@ describe("sanitizeErrorMessage", () => {
 			"mixed Windows + Unix: C:\\foo and /bar leak neither",
 			"mixed Windows + Unix: <path> and <path> leak neither",
 		],
-		// Home-relative paths. Tilde at the start of a token is treated as
-		// a path even without a leading `/`, because error messages
-		// practically never use `~` for anything else.
+		// Home-relative paths. Tilde must be followed by a `/` (with an
+		// optional username prefix) to be considered a path, so a bare
+		// tilde in prose like "home directory ~ expansion" passes through.
 		["~/.pi/agent/auth.json", "<path>"],
-		["~ expansion failed for ~/.pi/agent/auth.json", "<path> expansion failed for <path>"],
-		["config at ~/.pi/agent/x: parse error", "config at <path> parse error"],
+		["~ expansion failed for ~/.pi/agent/auth.json", "~ expansion failed for <path>"],
+		["config at ~/.pi/agent/x: parse error", "config at <path>"],
 		["open ~/.bashrc", "open <path>"],
 		["'~/.ssh/id_rsa'", "'<path>'"],
 		// Tilde user prefix (rare but real: ~alice/foo).
 		["~user/.ssh is 700", "<path> is 700"],
+		// Standalone tilde in prose should pass through.
+		["home directory ~ expansion failed", "home directory ~ expansion failed"],
 		// Non-string inputs: must not throw.
 		["", ""],
 		["no path here", "no path here"],

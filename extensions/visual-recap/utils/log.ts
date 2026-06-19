@@ -2,6 +2,9 @@
 // resume-marker and the session_start handler so the path-stripping
 // behaviour stays consistent.
 
+/** Shared log prefix for the extension. */
+export const LOG_PREFIX = "[pi-visual-recap]";
+
 /** Matches Windows drive-letter paths (C:\foo\bar). */
 const WINDOWS_PATH = /[A-Za-z]:\\[^\s)]+/g;
 /**
@@ -17,12 +20,24 @@ const WINDOWS_PATH = /[A-Za-z]:\\[^\s)]+/g;
 const UNIX_PATH = /(?:^|[\s(>'"`])\/[A-Za-z0-9_.@~+-][^\s'"`)]*/g;
 
 /**
- * Matches home-relative paths (e.g. `~/foo`, `~user/.ssh`) that don't
- * start with a `/`. Same character class and stop conditions as
- * `UNIX_PATH`. The `~` may be followed by a username, then a slash, then
- * the rest of the path.
+ * Matches home-relative paths (`~/foo`, `~user/.ssh`) that don't start
+ * with a leading `/`. We require a `/` after the tilde to avoid
+ * matching standalone tildes used in prose (e.g. "home directory ~
+ * expansion failed"). Same stop conditions as `UNIX_PATH`.
  */
-const TILDE_PATH = /(?:^|[\s(>'"`])~[A-Za-z0-9_.-]*(?:\/[^\s'"`)]*)?/g;
+const TILDE_PATH = /(?:^|[\s(>'"`])~[A-Za-z0-9_.-]*\/[^\s'"`)]*/g;
+
+/**
+ * Shared replacement for the UNIX and TILDE regexes. Both match a
+ * leading context character (whitespace, bracket, quote, or backtick)
+ * which we want to preserve, with the path body itself replaced by
+ * `<path>`. The callback handles both the captured leading character
+ * case and a bare match (no leading context char) uniformly.
+ */
+function redactPath(match: string): string {
+	const leading = match.match(/^[\s(>'"`]/) ? match[0] : "";
+	return `${leading}<path>`;
+}
 
 export function sanitizeErrorMessage(message: string): string {
 	if (typeof message !== "string") return String(message);
@@ -31,14 +46,8 @@ export function sanitizeErrorMessage(message: string): string {
 			// Windows first (C:\...) — never want to leak.
 			.replace(WINDOWS_PATH, "<path>")
 			// Unix absolute paths (start with `/`).
-			.replace(UNIX_PATH, (match) => {
-				const leading = match.match(/^[\s(>'"`]/) ? match[0] : "";
-				return `${leading}<path>`;
-			})
+			.replace(UNIX_PATH, redactPath)
 			// Home-relative paths (start with `~`).
-			.replace(TILDE_PATH, (match) => {
-				const leading = match.match(/^[\s(>'"`]/) ? match[0] : "";
-				return `${leading}<path>`;
-			})
+			.replace(TILDE_PATH, redactPath)
 	);
 }

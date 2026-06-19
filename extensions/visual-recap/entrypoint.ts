@@ -5,7 +5,7 @@ import {
 	registerVisualRecapTool,
 } from "./index.ts";
 import { writeResumeMarker } from "./resume-marker.ts";
-import { sanitizeErrorMessage } from "./utils/log.ts";
+import { LOG_PREFIX, sanitizeErrorMessage } from "./utils/log.ts";
 
 export default function (pi: ExtensionAPI) {
 	registerVisualRecapCommand(pi);
@@ -28,7 +28,7 @@ export default function (pi: ExtensionAPI) {
 			// already catches and logs its own errors, so this outer block
 			// only protects against unexpected sync throws.
 			const raw = err instanceof Error ? err.message : String(err);
-			console.warn(`[pi-visual-recap] session_start handler failed: ${sanitizeErrorMessage(raw)}`);
+			console.warn(`${LOG_PREFIX} session_start handler failed: ${sanitizeErrorMessage(raw)}`);
 		}
 	});
 }
