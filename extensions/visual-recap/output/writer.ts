@@ -59,6 +59,7 @@ export async function writeArtifact(
 	let target = safeJoinUnder(baseAbs, slug);
 
 	if (overwrite) {
+		await fs.rm(target, { recursive: true, force: true });
 		await fs.mkdir(target, { recursive: true });
 	} else {
 		let counter = 0;

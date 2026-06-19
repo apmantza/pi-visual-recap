@@ -473,12 +473,13 @@ function extractText(content: unknown): string {
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
 	return content
-		.map((part) => {
-			if (!part || typeof part !== "object") return "";
+		.flatMap((part) => {
+			if (!part || typeof part !== "object") return [];
 			const block = part as { type?: string; text?: string };
-			if (block.type === "text" && typeof block.text === "string")
-				return block.text;
-			return "";
+			if (block.type === "text" && typeof block.text === "string") {
+				return [block.text];
+			}
+			return [];
 		})
 		.join("\n")
 		.trim();

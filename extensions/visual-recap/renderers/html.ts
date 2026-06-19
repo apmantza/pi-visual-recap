@@ -11,6 +11,11 @@ import type {
 export function renderHtml(doc: RecapDocument): string {
 	doc = {
 		...doc,
+		title: doc.title ?? "Visual recap",
+		brief: doc.brief ?? "Review-ready recap of the selected target.",
+		target: doc.target ?? "unknown target",
+		generatedAt: doc.generatedAt ?? new Date().toISOString(),
+		source: doc.source ?? "git",
 		sections: doc.sections ?? [],
 		fileMap: doc.fileMap ?? [],
 		keyChanges: doc.keyChanges ?? [],
@@ -143,6 +148,7 @@ export function renderHtml(doc: RecapDocument): string {
   .diagram-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; }
   .diagram-shell { min-height: 420px; border: 1px solid var(--line); border-radius: 18px; background: var(--panel-recessed); overflow: hidden; }
   .diagram-toolbar { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 0.82rem; }
+  .diagram-title { margin: 0; font-family: var(--font-body); font-size: 0.82rem; font-weight: 700; color: var(--muted); }
   .zoom-controls { display: flex; flex-wrap: wrap; gap: 6px; }
   .zoom-controls button { border: 1px solid var(--line); color: var(--fg); background: var(--panel); border-radius: 10px; padding: 7px 10px; cursor: pointer; }
   .zoom-controls button:hover { border-color: var(--accent); }
@@ -151,6 +157,7 @@ export function renderHtml(doc: RecapDocument): string {
   .mermaid-canvas { transform-origin: 50% 50%; transition: transform 120ms ease; padding: 26px; }
   .mermaid-canvas svg { max-width: none; height: auto; display: block; }
   .diagram-fallback { padding: 16px; }
+  noscript .diagram-source { margin: 12px; }
   .diagram-source { max-height: 260px; }
   .diagram-pre, .json-pre { margin: 0; padding: 18px; overflow: auto; border: 1px solid var(--line); border-radius: 18px; background: var(--panel-recessed); color: var(--fg); font-size: 0.86rem; }
   .mini-panel { border: 1px solid var(--line); border-radius: 18px; background: var(--panel-recessed); padding: 16px; color: var(--muted); }
@@ -391,7 +398,7 @@ ${sections.join("\n")}
 
   function sanitizeSvg(svg) {
     const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
-    const blocked = 'script, foreignObject, iframe, object, embed, link, image, audio, video, animate, animateMotion, animateTransform, set';
+    const blocked = 'script, foreignObject, iframe, object, embed, link, style, image, audio, video, animate, animateMotion, animateTransform, set';
     for (const node of Array.from(doc.querySelectorAll(blocked))) {
       node.remove();
     }
@@ -437,9 +444,15 @@ interface RecapStats {
 }
 
 function summarize(doc: RecapDocument): RecapStats {
+	const totals = doc.fileMap.reduce(
+		(acc, file) => ({
+			additions: acc.additions + file.additions,
+			deletions: acc.deletions + file.deletions,
+		}),
+		{ additions: 0, deletions: 0 },
+	);
 	return {
-		additions: doc.fileMap.reduce((sum, file) => sum + file.additions, 0),
-		deletions: doc.fileMap.reduce((sum, file) => sum + file.deletions, 0),
+		...totals,
 		files: doc.fileMap.length,
 		keyChanges: doc.keyChanges.length,
 		risks: doc.risks.length,
@@ -581,7 +594,7 @@ function renderDiagram(
 	return `<div class="diagram-grid">
   <div class="diagram-shell" data-mermaid-shell="${id}">
     <div class="diagram-toolbar">
-      <span>Interactive Mermaid diagram</span>
+      <h3 class="diagram-title">Interactive Mermaid diagram</h3>
       <div class="zoom-controls" aria-label="Diagram zoom controls">
         <button type="button" data-zoom="out" aria-label="Zoom out">−</button>
         <button type="button" data-zoom="reset" aria-label="Reset diagram zoom">Reset</button>
@@ -728,6 +741,8 @@ function badgeFor(status: FileMapEntry["status"]): {
 	}
 }
 
+// Small, intentionally limited Markdown subset for AI summaries: paragraphs,
+// bullet lists, inline code, and bold text. Full Markdown remains in recap.md.
 function markdownToHtml(markdown: string): string {
 	const blocks = markdown
 		.trim()

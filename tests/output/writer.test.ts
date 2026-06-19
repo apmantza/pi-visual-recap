@@ -76,6 +76,29 @@ describe("writeArtifact", () => {
 		);
 	});
 
+	it("overwrites by replacing stale files in the existing slug directory", async () => {
+		const first = await writeArtifact({
+			baseDir: tmpDir,
+			slug: "same-slug",
+			files: { "recap.md": "first", "index.html": "stale" },
+		});
+
+		const second = await writeArtifact({
+			baseDir: tmpDir,
+			slug: "same-slug",
+			files: { "recap.md": "second" },
+			overwrite: true,
+		});
+
+		expect(second.dir).toBe(first.dir);
+		expect(await fs.readFile(path.join(second.dir, "recap.md"), "utf8")).toBe(
+			"second",
+		);
+		await expect(
+			fs.access(path.join(second.dir, "index.html")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
 	it("rejects unsafe path segments", async () => {
 		await expect(
 			writeArtifact({
