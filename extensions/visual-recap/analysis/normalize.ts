@@ -17,6 +17,7 @@ export function evidenceFromGit(evidence: GitEvidence): RecapEvidence {
 		diffText: evidence.diffText,
 		commits: evidence.commits,
 		files: evidence.files,
+		git: evidence,
 		metadata: {
 			repoRoot: evidence.repoRoot,
 			baseRef: evidence.baseRef,

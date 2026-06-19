@@ -126,6 +126,7 @@ export interface RecapEvidence {
 	files: ChangedFile[];
 	session?: SessionEvidence;
 	pr?: PrEvidence;
+	git?: GitEvidence;
 	metadata: Record<string, unknown>;
 }
 
