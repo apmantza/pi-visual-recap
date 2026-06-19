@@ -23,7 +23,9 @@ function assertSafeSegment(value: string, label: string): void {
 		throw new Error(`${label} must be 1-${MAX_NAME_LENGTH} chars`);
 	}
 	if (!SAFE_SEGMENT.test(value) || value === "." || value === "..") {
-		throw new Error(`${label} contains unsafe characters: ${JSON.stringify(value)}`);
+		throw new Error(
+			`${label} contains unsafe characters: ${JSON.stringify(value)}`,
+		);
 	}
 }
 
@@ -37,36 +39,45 @@ function safeJoinUnder(base: string, ...parts: string[]): string {
 	return target;
 }
 
+function errorCode(err: unknown): unknown {
+	return typeof err === "object" && err !== null && "code" in err
+		? (err as { code?: unknown }).code
+		: undefined;
+}
+
+function isAlreadyExistsError(err: unknown): boolean {
+	return errorCode(err) === "EEXIST";
+}
+
 export async function writeArtifact(
 	options: WriteArtifactOptions,
 ): Promise<WriteArtifactResult> {
 	const { baseDir, slug, files, evidenceFiles, overwrite } = options;
 	assertSafeSegment(slug, "slug");
 	const baseAbs = path.resolve(baseDir);
-	const target = safeJoinUnder(baseAbs, slug);
-	await fs.mkdir(target, { recursive: true });
+	await fs.mkdir(baseAbs, { recursive: true });
+	let target = safeJoinUnder(baseAbs, slug);
 
-	if (!overwrite) {
-		try {
-			await fs.access(target);
-			let counter = 1;
-			while (counter < 1000) {
-				const candidate = safeJoinUnder(baseAbs, `${slug}-${counter}`);
-				try {
-					await fs.access(candidate);
-					counter += 1;
-				} catch {
-					return await writeArtifact({
-						...options,
-						baseDir,
-						slug: `${slug}-${counter}`,
-					});
+	if (overwrite) {
+		await fs.mkdir(target, { recursive: true });
+	} else {
+		let counter = 0;
+		while (counter < 1000) {
+			const candidateSlug = counter === 0 ? slug : `${slug}-${counter}`;
+			const candidate = safeJoinUnder(baseAbs, candidateSlug);
+			try {
+				await fs.mkdir(candidate);
+				target = candidate;
+				break;
+			} catch (err) {
+				if (!isAlreadyExistsError(err)) {
+					throw err;
 				}
+				counter += 1;
 			}
+		}
+		if (counter >= 1000) {
 			throw new Error(`Too many recap artifacts with slug ${slug}`);
-		} catch (err) {
-			if (err instanceof Error && err.message.startsWith("Path escapes")) throw err;
-			// target does not exist, proceed
 		}
 	}
 

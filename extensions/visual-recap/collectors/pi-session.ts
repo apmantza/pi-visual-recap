@@ -4,7 +4,6 @@ import { existsSync } from "node:fs";
 import {
 	SessionManager,
 	type SessionEntry,
-	type SessionTreeNode,
 } from "@earendil-works/pi-coding-agent";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
@@ -35,6 +34,11 @@ interface AssistantLike {
 	role: string;
 	content: unknown;
 	timestamp?: string | number | Date;
+}
+
+interface SessionTreeNode {
+	entry: SessionEntry;
+	children: SessionTreeNode[];
 }
 
 export async function collectSession(
@@ -143,7 +147,10 @@ export async function collectSession(
  * path to a regular file. Relative paths are resolved against `ctx.cwd`.
  * Reject parent traversal (`..`) and ensure the resolved path is real.
  */
-function openSessionFile(rawPath: string, ctx: ExtensionContext): SessionManager {
+function openSessionFile(
+	rawPath: string,
+	ctx: ExtensionContext,
+): SessionManager {
 	const resolved = resolveSessionPath(rawPath, ctx);
 	if (!resolved) {
 		throw new Error(
@@ -211,8 +218,7 @@ function walkBranch(branch: SessionEntry[]): BranchWalk {
 	let endedAt: string | undefined;
 	let totalMessages = 0;
 
-	for (let i = 0; i < branch.length; i += 1) {
-		const entry = branch[i]!;
+	for (const [i, entry] of branch.entries()) {
 		if (!startedAt) startedAt = entry.timestamp;
 		endedAt = entry.timestamp;
 
@@ -366,7 +372,10 @@ function walkToEvidence(
 	};
 }
 
-function truncateBranchAt(branch: SessionEntry[], entryId: string): SessionEntry[] {
+function truncateBranchAt(
+	branch: SessionEntry[],
+	entryId: string,
+): SessionEntry[] {
 	const idx = branch.findIndex((e) => e.id === entryId);
 	if (idx === -1) {
 		throw new Error(`Entry ${entryId} not found in current branch`);
@@ -376,7 +385,9 @@ function truncateBranchAt(branch: SessionEntry[], entryId: string): SessionEntry
 
 function findResumeMarker(
 	branch: SessionEntry[],
-): { entryId: string; previousSessionFile?: string; timestamp?: string } | undefined {
+):
+	| { entryId: string; previousSessionFile?: string; timestamp?: string }
+	| undefined {
 	for (const entry of branch) {
 		if (entry.type === "custom" && entry.customType === RESUME_MARKER_TYPE) {
 			const data = entry.data as { previousSessionFile?: string } | undefined;
@@ -408,12 +419,13 @@ function visitTree(
 ): void {
 	const directUserPrompts: string[] = collectUserPromptsFromNode(node);
 	const subtreeSize = countSubtree(node);
-	const label = node.entry.type === "label" ? node.entry.label ?? undefined : undefined;
+	const label =
+		node.entry.type === "label" ? (node.entry.label ?? undefined) : undefined;
 	const branchSummary =
 		node.entry.type === "branch_summary" ? node.entry.summary : undefined;
 	const isCurrentLeaf = node.entry.id === currentLeafId;
 	const firstUserPrompt = directUserPrompts[0];
-	const lastUserPrompt = directUserPrompts[directUserPrompts.length - 1];
+	const lastUserPrompt = directUserPrompts.at(-1);
 	out.push({
 		leafId: isCurrentLeaf ? currentLeafId : null,
 		...(label ? { label } : {}),
@@ -432,7 +444,9 @@ function visitTree(
 function collectUserPromptsFromNode(node: SessionTreeNode): string[] {
 	const out: string[] = [];
 	if (node.entry.type === "message") {
-		const msg = (node.entry as { message: { role?: string; content?: unknown } }).message;
+		const msg = (
+			node.entry as { message: { role?: string; content?: unknown } }
+		).message;
 		if (msg?.role === "user") {
 			const text = extractText(msg.content);
 			if (text.trim()) out.push(text);
@@ -462,7 +476,8 @@ function extractText(content: unknown): string {
 		.map((part) => {
 			if (!part || typeof part !== "object") return "";
 			const block = part as { type?: string; text?: string };
-			if (block.type === "text" && typeof block.text === "string") return block.text;
+			if (block.type === "text" && typeof block.text === "string")
+				return block.text;
 			return "";
 		})
 		.join("\n")
@@ -556,6 +571,7 @@ function recordDecisionHints(
 	decisions.push({
 		index: decisions.length,
 		decision: `${call.name} ${path}`,
-		rationale: call.args.length > 140 ? `${call.args.slice(0, 140)}…` : call.args,
+		rationale:
+			call.args.length > 140 ? `${call.args.slice(0, 140)}…` : call.args,
 	});
 }
