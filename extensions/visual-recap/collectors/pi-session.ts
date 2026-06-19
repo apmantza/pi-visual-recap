@@ -1,19 +1,12 @@
+import { existsSync } from "node:fs";
 // Pi session evidence collector.
 import * as path from "node:path";
-import { existsSync } from "node:fs";
 import {
-	generateUnifiedPatch,
-	SessionManager,
 	type SessionEntry,
+	SessionManager,
+	generateUnifiedPatch,
 } from "@earendil-works/pi-coding-agent";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import {
-	detectToolKind,
-	isToolResultError,
-	summarizeToolArgs,
-	summarizeToolResult,
-} from "./tool-summary.ts";
-import { redactSecrets } from "../utils/secret-redactor.ts";
 import type {
 	SessionBranchSummary,
 	SessionDecision,
@@ -22,6 +15,13 @@ import type {
 	SessionTurn,
 	SessionUsageSummary,
 } from "../schemas.ts";
+import { redactSecrets } from "../utils/secret-redactor.ts";
+import {
+	detectToolKind,
+	isToolResultError,
+	summarizeToolArgs,
+	summarizeToolResult,
+} from "./tool-summary.ts";
 
 export const RESUME_MARKER_TYPE = "visual-recap:resume-from";
 

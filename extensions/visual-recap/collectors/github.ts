@@ -1,8 +1,8 @@
+import type { ChangedFile, CommitSummary, PrEvidence } from "../schemas.ts";
+import type { RecapTarget } from "../schemas.ts";
 // GitHub PR evidence collector. Prefers `gh` (works for private repos when authed),
 // falls back to the public REST API for public PRs.
 import { tryExec } from "../utils/exec.ts";
-import type { ChangedFile, CommitSummary, PrEvidence } from "../schemas.ts";
-import type { RecapTarget } from "../schemas.ts";
 
 export interface CollectPrOptions {
 	cwd: string;

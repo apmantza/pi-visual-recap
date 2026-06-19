@@ -28,7 +28,9 @@ export default function (pi: ExtensionAPI) {
 			// already catches and logs its own errors, so this outer block
 			// only protects against unexpected sync throws.
 			const raw = err instanceof Error ? err.message : String(err);
-			console.warn(`${LOG_PREFIX} session_start handler failed: ${sanitizeErrorMessage(raw)}`);
+			console.warn(
+				`${LOG_PREFIX} session_start handler failed: ${sanitizeErrorMessage(raw)}`,
+			);
 		}
 	});
 }

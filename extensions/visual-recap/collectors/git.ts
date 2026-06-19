@@ -1,7 +1,7 @@
-// Git evidence collector.
-import { exec, tryExec } from "../utils/exec.ts";
 import type { ChangedFile, CommitSummary, GitEvidence } from "../schemas.ts";
 import type { RecapTarget } from "../schemas.ts";
+// Git evidence collector.
+import { exec, tryExec } from "../utils/exec.ts";
 
 export interface CollectGitOptions {
 	cwd: string;

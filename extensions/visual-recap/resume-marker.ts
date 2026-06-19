@@ -25,6 +25,8 @@ export function writeResumeMarker(
 	} catch (err) {
 		// Marker write is best-effort — never crash session_start over it.
 		const raw = err instanceof Error ? err.message : String(err);
-		console.warn(`[pi-visual-recap] Failed to write resume marker: ${sanitizeErrorMessage(raw)}`);
+		console.warn(
+			`[pi-visual-recap] Failed to write resume marker: ${sanitizeErrorMessage(raw)}`,
+		);
 	}
 }

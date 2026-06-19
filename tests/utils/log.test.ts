@@ -8,10 +8,7 @@ import { sanitizeErrorMessage } from "../../extensions/visual-recap/utils/log.ts
 
 describe("sanitizeErrorMessage", () => {
 	it.each([
-		[
-			"C:\\Users\\me\\file.ts: not found",
-			"<path> not found",
-		],
+		["C:\\Users\\me\\file.ts: not found", "<path> not found"],
 		[
 			"ENOENT: no such file or directory, open '/Users/me/x.json'",
 			"ENOENT: no such file or directory, open '<path>'",
@@ -50,8 +47,11 @@ describe("sanitizeErrorMessage", () => {
 		// optional username prefix) to be considered a path, so a bare
 		// tilde in prose like "home directory ~ expansion" passes through.
 		["~/.pi/agent/auth.json", "<path>"],
-		["~ expansion failed for ~/.pi/agent/auth.json", "~ expansion failed for <path>"],
-		["config at ~/.pi/agent/x: parse error", "config at <path>"],
+		[
+			"~ expansion failed for ~/.pi/agent/auth.json",
+			"~ expansion failed for <path>",
+		],
+		["config at ~/.pi/agent/x: parse error", "config at <path> parse error"],
 		["open ~/.bashrc", "open <path>"],
 		["'~/.ssh/id_rsa'", "'<path>'"],
 		// Tilde user prefix (rare but real: ~alice/foo).

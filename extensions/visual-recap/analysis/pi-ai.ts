@@ -1,5 +1,5 @@
 // PI-AI model wrapper. Always re-uses the user's active Pi model/auth.
-import { complete, type Message } from "@earendil-works/pi-ai";
+import { type Message, complete } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export interface RunAiOptions {

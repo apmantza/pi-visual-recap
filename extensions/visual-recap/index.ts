@@ -1,39 +1,39 @@
 // Pi visual recap command + tool.
-import { complete, type Message } from "@earendil-works/pi-ai";
+import { type Message, complete } from "@earendil-works/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
-import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { collectGit } from "./collectors/git.ts";
-import { collectPr } from "./collectors/github.ts";
-import { collectSession } from "./collectors/pi-session.ts";
-import { parseTarget } from "./collectors/target.ts";
 import {
 	evidenceFromGit,
 	evidenceFromPr,
 	evidenceFromSession,
 } from "./analysis/normalize.ts";
+import { runAi } from "./analysis/pi-ai.ts";
 import {
 	buildSystemPrompt,
 	buildUserPrompt,
 	coerceRecapDocument,
 } from "./analysis/prompts.ts";
-import { runAi } from "./analysis/pi-ai.ts";
-import { mergeConfig, type VisualRecapConfig } from "./config.ts";
-import { renderMarkdown } from "./renderers/markdown.ts";
-import { renderJson } from "./renderers/json.ts";
-import { renderMdx } from "./renderers/mdx.ts";
-import { renderHtml } from "./renderers/html.ts";
+import { collectGit } from "./collectors/git.ts";
+import { collectPr } from "./collectors/github.ts";
+import { collectSession } from "./collectors/pi-session.ts";
+import { parseTarget } from "./collectors/target.ts";
+import { type VisualRecapConfig, mergeConfig } from "./config.ts";
 import { writeArtifact } from "./output/writer.ts";
-import { slugify, timestampSlug, safeJoin } from "./utils/paths.ts";
+import { renderHtml } from "./renderers/html.ts";
+import { renderJson } from "./renderers/json.ts";
+import { renderMarkdown } from "./renderers/markdown.ts";
+import { renderMdx } from "./renderers/mdx.ts";
 import type {
 	RecapDocument,
 	RecapEvidence,
 	RecapTarget,
 	VisualRecapOptions,
 } from "./schemas.ts";
+import { safeJoin, slugify, timestampSlug } from "./utils/paths.ts";
 
 const COMMAND_NAME = "visual-recap";
 const TOOL_NAME = "visual_recap";

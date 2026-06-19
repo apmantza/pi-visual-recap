@@ -1,7 +1,7 @@
+import { randomUUID } from "node:crypto";
 // Atomic writer for the recap artifact directory.
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { randomUUID } from "node:crypto";
 
 export interface WriteArtifactOptions {
 	baseDir: string;

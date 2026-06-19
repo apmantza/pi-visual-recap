@@ -868,6 +868,7 @@ function formatDate(value: string): string {
 	});
 }
 
+// biome-ignore lint/suspicious/noShadowRestrictedNames: matches the existing renderer API
 function escape(value: string): string {
 	return value.replace(/[&<>"]/g, (char) => {
 		switch (char) {
