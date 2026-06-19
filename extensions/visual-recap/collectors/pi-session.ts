@@ -153,8 +153,12 @@ function openSessionFile(rawPath: string, ctx: ExtensionContext): SessionManager
 	try {
 		return SessionManager.open(resolved, undefined, ctx.cwd);
 	} catch (err) {
+		// The user already supplied this path, but the rethrown error
+		// might land in a log context shared with other extensions. Use
+		// only the basename in the user-facing message.
 		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to open session file ${resolved}: ${message}`);
+		const baseName = resolved.replace(/^.*[\\/]/, "") || resolved;
+		throw new Error(`Failed to open session file ${baseName}: ${message}`);
 	}
 }
 
