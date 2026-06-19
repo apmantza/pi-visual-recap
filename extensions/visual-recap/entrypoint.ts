@@ -13,14 +13,10 @@ export default function (pi: ExtensionAPI) {
 	// On /resume (not on /new), record a tiny marker so a later
 	// `/visual-recap session current` can split pre-resume vs post-resume.
 	// No recap is auto-generated — the user must still type /visual-recap.
+	// writeResumeMarker handles its own errors and never throws.
 	pi.on("session_start", (event) => {
-		try {
-			if (event.reason !== "resume") return;
-			if (!event.previousSessionFile) return;
-			writeResumeMarker(pi, event.previousSessionFile);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			console.warn(`[pi-visual-recap] session_start handler failed: ${message}`);
-		}
+		if (event.reason !== "resume") return;
+		if (!event.previousSessionFile) return;
+		writeResumeMarker(pi, event.previousSessionFile);
 	});
 }
