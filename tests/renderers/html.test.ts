@@ -85,6 +85,41 @@ describe("renderHtml", () => {
 		expect(html).toContain("width:0%");
 	});
 
+	it("renders tabbed file diffs with one panel per file", () => {
+		const html = renderHtml(
+			doc({
+				sections: [
+					{
+						type: "file-tree",
+						entries: [
+							{
+								path: "src/example.ts",
+								status: "modified",
+								additions: 1,
+								deletions: 1,
+								diff: "--- a/src/example.ts\n+++ b/src/example.ts\n@@\n-old\n+new",
+							},
+							{
+								path: "src/other.ts",
+								status: "added",
+								additions: 10,
+								deletions: 0,
+								diff: "--- /dev/null\n+++ b/src/other.ts\n@@\n+new file",
+							},
+						],
+					},
+				],
+			}),
+		);
+
+		expect(html).toContain("file-tabs");
+		expect(html).toContain("file-tab-panels");
+		expect(html).toContain("file-diff-panel");
+		expect(html).toContain("src/example.ts");
+		expect(html).toContain("src/other.ts");
+		expect(html).toContain("+new");
+	});
+
 	it("escapes diff content in the file disclosure", () => {
 		const html = renderHtml(
 			doc({
@@ -165,31 +200,6 @@ describe("renderHtml", () => {
 		expect(html).toContain("Total tokens");
 		expect(html).toContain(".mermaid-canvas svg text");
 		expect(html).toContain("fill: var(--fg) !important");
-	});
-
-	it("renders a show diff disclosure for file entries with diffs", () => {
-		const html = renderHtml(
-			doc({
-				sections: [
-					{
-						type: "file-tree",
-						entries: [
-							{
-								path: "src/example.ts",
-								status: "modified",
-								additions: 1,
-								deletions: 1,
-								diff: "--- a/src/example.ts\n+++ b/src/example.ts\n@@\n-old\n+new",
-							},
-						],
-					},
-				],
-			}),
-		);
-
-		expect(html).toContain("Show diff");
-		expect(html).toContain("diff-pre");
-		expect(html).toContain("+new");
 	});
 
 	it("keeps dangerous SVG elements in the client sanitizer blocklist", () => {
