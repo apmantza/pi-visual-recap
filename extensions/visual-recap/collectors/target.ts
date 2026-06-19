@@ -27,7 +27,9 @@ export function parseTarget(
 		if (rest.startsWith("fork ") || rest.startsWith("fork\t")) {
 			const entryId = rest.slice("fork ".length).trim();
 			if (!entryId) {
-				throw new Error("`session fork` requires an entry id: `session fork <entryId>`");
+				throw new Error(
+					"`session fork` requires an entry id: `session fork <entryId>`",
+				);
 			}
 			return { kind: "session", session: "current", forkAt: entryId };
 		}

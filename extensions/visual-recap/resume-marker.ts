@@ -8,18 +8,22 @@
 // not participate in LLM context by design — see session-format.md).
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { RESUME_MARKER_TYPE } from "./collectors/pi-session.ts";
 
 export function writeResumeMarker(
 	pi: ExtensionAPI,
 	previousSessionFile: string,
 	timestamp: string = new Date().toISOString(),
 ): void {
-	pi.appendEntry("visual-recap:resume-from", {
-		previousSessionFile,
-		recordedAt: timestamp,
-		note: "Auto-written by pi-visual-recap. Enables pre/post-resume split in /visual-recap session current.",
-	});
+	try {
+		pi.appendEntry(RESUME_MARKER_TYPE, {
+			previousSessionFile,
+			recordedAt: timestamp,
+			note: "Auto-written by pi-visual-recap. Enables pre/post-resume split in /visual-recap session current.",
+		});
+	} catch (err) {
+		// Marker write is best-effort — never crash session_start over it.
+		const message = err instanceof Error ? err.message : String(err);
+		console.warn(`[pi-visual-recap] Failed to write resume marker: ${message}`);
+	}
 }
-
-// Exported for use from index.ts in case a future flow wants the same helper.
-export { writeResumeMarker as writeResumeMarkerImpl };

@@ -1,7 +1,6 @@
 // Normalize git/pr/session evidence into a common shape before AI summarization.
 import type {
 	ChangedFile,
-	CommitSummary,
 	FileMapEntry,
 	GitEvidence,
 	PrEvidence,
@@ -55,7 +54,14 @@ export function evidenceFromSession(evidence: SessionEvidence): RecapEvidence {
 		if (existing) {
 			existing.additions += additions;
 			existing.deletions += deletions;
-			if (t.action === "write") existing.status = "modified";
+			// Promote the status: write > edit > read.
+			if (t.action === "write") {
+				existing.status = "modified";
+				existing.note = t.action;
+			} else if (t.action === "edit" && existing.status === "read") {
+				existing.status = "touched";
+				existing.note = t.action;
+			}
 		} else {
 			touched.set(t.path, {
 				path: t.path,

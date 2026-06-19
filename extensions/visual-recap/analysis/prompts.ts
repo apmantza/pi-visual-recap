@@ -145,8 +145,12 @@ function buildSessionPrompt(
 	return [
 		`Target: ${targetLabel}`,
 		`Source: Pi session`,
-		s.sourceKind === "tree" ? `Mode: full tree (current branch + every other path)` : "",
-		s.sourceKind === "current" && s.split ? `Mode: split recap (pre-resume + post-resume)` : "",
+		s.sourceKind === "tree"
+			? `Mode: full tree (current branch + every other path)`
+			: "",
+		s.sourceKind === "current" && s.split
+			? `Mode: split recap (pre-resume + post-resume)`
+			: "",
 		s.sessionName ? `Session name: ${s.sessionName}` : "",
 		s.sessionFile ? `Session file: ${s.sessionFile}` : "",
 		`Branch length: ${s.branchLength} entries  •  Messages: ${s.totalMessages}`,
@@ -217,11 +221,13 @@ function renderTreeSummary(s: SessionEvidence): string {
 			const parts = [`- length ${b.length}`];
 			if (b.leafId) parts.push("current");
 			if (b.label) parts.push(`label=${b.label}`);
-			if (b.firstUserPrompt) parts.push(`first=${truncate(b.firstUserPrompt, 80)}`);
+			if (b.firstUserPrompt)
+				parts.push(`first=${truncate(b.firstUserPrompt, 80)}`);
 			if (b.lastUserPrompt && b.lastUserPrompt !== b.firstUserPrompt) {
 				parts.push(`last=${truncate(b.lastUserPrompt, 80)}`);
 			}
-			if (b.branchSummary) parts.push(`summary=${truncate(b.branchSummary, 100)}`);
+			if (b.branchSummary)
+				parts.push(`summary=${truncate(b.branchSummary, 100)}`);
 			return parts.join("  •  ");
 		}),
 	];
@@ -242,7 +248,9 @@ function renderSplitPrompt(s: SessionEvidence): string {
 		lines.push(
 			`Pre-resume branch: ${p.branchLength} entries, ${p.userPrompts.length} user prompt${p.userPrompts.length === 1 ? "" : "s"}`,
 		);
-		lines.push(`  first user prompt: ${truncate(p.userPrompts[0] ?? "(none)", 160)}`);
+		lines.push(
+			`  first user prompt: ${truncate(p.userPrompts[0] ?? "(none)", 160)}`,
+		);
 		lines.push(
 			`  last user prompt (before resume): ${truncate(p.userPrompts[p.userPrompts.length - 1] ?? "(none)", 160)}`,
 		);

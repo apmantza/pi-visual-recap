@@ -124,7 +124,8 @@ export function renderMarkdown(doc: RecapDocument): string {
 			if (s.split.previousSessionFile) {
 				lines.push(`- **Resumed from:** \`${s.split.previousSessionFile}\``);
 			}
-			if (s.split.resumedAt) lines.push(`- **Resumed at:** ${s.split.resumedAt}`);
+			if (s.split.resumedAt)
+				lines.push(`- **Resumed at:** ${s.split.resumedAt}`);
 			if (s.split.preResume) {
 				const p = s.split.preResume;
 				lines.push(
@@ -145,7 +146,9 @@ export function renderMarkdown(doc: RecapDocument): string {
 					`- **Post-resume:** ${post.branchLength} entries, ${post.userPrompts.length} user prompt${post.userPrompts.length === 1 ? "" : "s"}, ${post.touchedFiles.length} file${post.touchedFiles.length === 1 ? "" : "s"} touched, ${post.decisions.length} decision${post.decisions.length === 1 ? "" : "s"}`,
 				);
 				if (post.userPrompts[0]) {
-					lines.push(`  - First prompt (after resume): ${escapeMd(post.userPrompts[0])}`);
+					lines.push(
+						`  - First prompt (after resume): ${escapeMd(post.userPrompts[0])}`,
+					);
 				}
 			}
 		}

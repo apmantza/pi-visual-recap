@@ -15,33 +15,57 @@ export interface WriteArtifactResult {
 	written: string[];
 }
 
+const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
+const MAX_NAME_LENGTH = 100;
+
+function assertSafeSegment(value: string, label: string): void {
+	if (!value || value.length > MAX_NAME_LENGTH) {
+		throw new Error(`${label} must be 1-${MAX_NAME_LENGTH} chars`);
+	}
+	if (!SAFE_SEGMENT.test(value) || value === "." || value === "..") {
+		throw new Error(`${label} contains unsafe characters: ${JSON.stringify(value)}`);
+	}
+}
+
+function safeJoinUnder(base: string, ...parts: string[]): string {
+	const normalizedBase = path.resolve(base);
+	const target = path.resolve(normalizedBase, ...parts);
+	const relative = path.relative(normalizedBase, target);
+	if (relative.startsWith("..") || path.isAbsolute(relative)) {
+		throw new Error(`Path escapes base directory: ${parts.join("/")}`);
+	}
+	return target;
+}
+
 export async function writeArtifact(
 	options: WriteArtifactOptions,
 ): Promise<WriteArtifactResult> {
 	const { baseDir, slug, files, evidenceFiles, overwrite } = options;
-	const target = path.join(baseDir, slug);
+	assertSafeSegment(slug, "slug");
+	const baseAbs = path.resolve(baseDir);
+	const target = safeJoinUnder(baseAbs, slug);
 	await fs.mkdir(target, { recursive: true });
 
 	if (!overwrite) {
 		try {
 			await fs.access(target);
-			// If it exists, append a numeric suffix.
 			let counter = 1;
-			while (true) {
-				const candidate = path.join(baseDir, `${slug}-${counter}`);
+			while (counter < 1000) {
+				const candidate = safeJoinUnder(baseAbs, `${slug}-${counter}`);
 				try {
 					await fs.access(candidate);
 					counter += 1;
 				} catch {
-					break;
+					return await writeArtifact({
+						...options,
+						baseDir,
+						slug: `${slug}-${counter}`,
+					});
 				}
 			}
-			return await writeArtifact({
-				...options,
-				baseDir,
-				slug: `${slug}-${counter}`,
-			});
-		} catch {
+			throw new Error(`Too many recap artifacts with slug ${slug}`);
+		} catch (err) {
+			if (err instanceof Error && err.message.startsWith("Path escapes")) throw err;
 			// target does not exist, proceed
 		}
 	}
@@ -49,17 +73,19 @@ export async function writeArtifact(
 	const written: string[] = [];
 
 	if (evidenceFiles && Object.keys(evidenceFiles).length > 0) {
-		const evidenceDir = path.join(target, "evidence");
+		const evidenceDir = safeJoinUnder(target, "evidence");
 		await fs.mkdir(evidenceDir, { recursive: true });
 		for (const [name, content] of Object.entries(evidenceFiles)) {
-			const filePath = path.join(evidenceDir, name);
+			assertSafeSegment(name, "evidence filename");
+			const filePath = safeJoinUnder(evidenceDir, name);
 			await fs.writeFile(filePath, content, "utf8");
 			written.push(filePath);
 		}
 	}
 
 	for (const [name, content] of Object.entries(files)) {
-		const filePath = path.join(target, name);
+		assertSafeSegment(name, "output filename");
+		const filePath = safeJoinUnder(target, name);
 		await fs.writeFile(filePath, content, "utf8");
 		written.push(filePath);
 	}

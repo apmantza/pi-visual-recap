@@ -77,7 +77,7 @@ export interface SessionEvidence {
 		action: "read" | "write" | "edit" | "bash";
 	}>;
 	decisions: SessionDecision[];
-	followUps: string[];
+	followUps?: string[];
 	compactionSummaries: string[];
 	branches?: SessionBranchSummary[];
 	split?: SessionSplit;

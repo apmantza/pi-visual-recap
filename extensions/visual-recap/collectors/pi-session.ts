@@ -1,4 +1,6 @@
 // Pi session evidence collector.
+import * as path from "node:path";
+import { existsSync } from "node:fs";
 import {
 	SessionManager,
 	type SessionEntry,
@@ -19,6 +21,8 @@ import type {
 	SessionTurn,
 } from "../schemas.ts";
 
+export const RESUME_MARKER_TYPE = "visual-recap:resume-from";
+
 export type SessionTarget = "current" | "tree" | string;
 
 export interface CollectSessionOptions {
@@ -38,7 +42,6 @@ export async function collectSession(
 ): Promise<SessionEvidence> {
 	const { ctx, session, forkAt } = options;
 
-	// Open the target session manager.
 	const sm =
 		session === "current" || session === "tree"
 			? ctx.sessionManager
@@ -48,7 +51,6 @@ export async function collectSession(
 	const sessionId = sm.getSessionId();
 	const sessionName = sm.getSessionName?.();
 
-	// 1) Resolve the branch to walk.
 	let branch: SessionEntry[] = sm.getBranch();
 	let targetLabel: string;
 	let sourceKind: SessionEvidence["sourceKind"];
@@ -64,7 +66,6 @@ export async function collectSession(
 		sourceKind = "file";
 	}
 
-	// 2) If `forkAt` is provided, truncate the branch at that entry.
 	if (forkAt) {
 		branch = truncateBranchAt(branch, forkAt);
 		if (branch.length === 0) {
@@ -73,35 +74,40 @@ export async function collectSession(
 		targetLabel = `${targetLabel} (fork at ${forkAt.slice(0, 12)})`;
 	}
 
-	// 3) Walk the branch and build the base evidence.
-	const base = walkBranch(branch);
+	// Walk the whole branch once for the top-level evidence.
+	const fullWalk = walkBranch(branch);
 
-	// 4) For the current session, look for a pre-resume split marker.
+	// Pre-resume split: when a resume marker is present, the entries BEFORE
+	// the marker are the pre-resume half; entries AFTER (and including) the
+	// marker are the post-resume half. Note the marker is the first entry of
+	// the new session that pi writes on session_start, so post-resume starts
+	// AT the marker.
 	let split: SessionEvidence["split"];
 	if (session === "current" || session === "tree") {
 		const marker = findResumeMarker(branch);
 		if (marker) {
-			const preResumeEntries = truncateBranchAt(branch, marker.entryId);
-			const preResume = synthesizeFromExisting(
-				base,
-				walkBranch(preResumeEntries),
-				`pre-resume (resumed from ${marker.previousSessionFile ?? "previous session"})`,
-			);
-			const postResume = synthesizeFromExisting(
-				base,
-				walkBranch(branch),
-				"post-resume (this session)",
-			);
-			split = {
-				previousSessionFile: marker.previousSessionFile,
-				resumedAt: marker.timestamp,
-				preResume,
-				postResume,
-			};
+			const markerIdx = branch.findIndex((e) => e.id === marker.entryId);
+			if (markerIdx !== -1) {
+				const preResumeEntries = branch.slice(0, markerIdx);
+				const postResumeEntries = branch.slice(markerIdx);
+				split = {
+					previousSessionFile: marker.previousSessionFile,
+					resumedAt: marker.timestamp,
+					preResume: walkToEvidence(
+						walkBranch(preResumeEntries),
+						preResumeEntries.length,
+						`pre-resume (resumed from ${marker.previousSessionFile ?? "previous session"})`,
+					),
+					postResume: walkToEvidence(
+						walkBranch(postResumeEntries),
+						postResumeEntries.length,
+						"post-resume (this session)",
+					),
+				};
+			}
 		}
 	}
 
-	// 5) For tree mode, summarise every other branch too.
 	let branches: SessionBranchSummary[] | undefined;
 	if (session === "tree") {
 		branches = summariseTree(sm.getTree(), sm.getLeafId());
@@ -113,36 +119,70 @@ export async function collectSession(
 		sessionId,
 		sessionName: sessionName ?? undefined,
 		targetLabel,
-		startedAt: base.startedAt,
-		endedAt: base.endedAt,
+		startedAt: fullWalk.startedAt,
+		endedAt: fullWalk.endedAt,
 		branchLength: branch.length,
-		totalMessages: base.totalMessages,
-		userPrompts: base.userPrompts,
-		assistantSummaries: base.assistantSummaries,
-		turns: base.turns,
-		toolCalls: base.toolCalls,
-		touchedFiles: base.touchedFiles,
-		decisions: base.decisions,
-		followUps: base.followUps,
-		compactionSummaries: base.compactionSummaries,
+		totalMessages: fullWalk.totalMessages,
+		userPrompts: fullWalk.userPrompts,
+		assistantSummaries: fullWalk.assistantSummaries,
+		turns: fullWalk.turns,
+		toolCalls: fullWalk.toolCalls,
+		touchedFiles: fullWalk.touchedFiles,
+		decisions: fullWalk.decisions,
+		compactionSummaries: fullWalk.compactionSummaries,
 		...(branches ? { branches } : {}),
 		...(split ? { split } : {}),
 	};
 }
 
-function openSessionFile(path: string, ctx: ExtensionContext): SessionManager {
+/**
+ * Open a session file by path, with a path-traversal guard.
+ *
+ * The path must point to a file inside the agent's session directory
+ * (resolved via the `SessionManager` defaults) or be an existing absolute
+ * path to a regular file. Relative paths are resolved against `ctx.cwd`.
+ * Reject parent traversal (`..`) and ensure the resolved path is real.
+ */
+function openSessionFile(rawPath: string, ctx: ExtensionContext): SessionManager {
+	const resolved = resolveSessionPath(rawPath, ctx);
+	if (!resolved) {
+		throw new Error(
+			`Session path "${rawPath}" is not allowed. Pass an absolute path inside the agent's session directory, or a relative path under the current working directory.`,
+		);
+	}
 	try {
-		return SessionManager.open(path, undefined, ctx.cwd);
+		return SessionManager.open(resolved, undefined, ctx.cwd);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to open session file ${path}: ${message}`);
+		throw new Error(`Failed to open session file ${resolved}: ${message}`);
 	}
+}
+
+function resolveSessionPath(
+	rawPath: string,
+	ctx: ExtensionContext,
+): string | null {
+	if (!rawPath || rawPath.includes("\0")) return null;
+	// Reject obvious traversal segments anywhere in the path.
+	const segments = rawPath.split(/[\\/]+/);
+	if (segments.some((s) => s === "..")) return null;
+
+	const absolute = path.isAbsolute(rawPath)
+		? path.normalize(rawPath)
+		: path.resolve(ctx.cwd, rawPath);
+
+	// Must be a real file.
+	if (!existsSync(absolute)) return null;
+
+	// Prefer paths inside the agent's session dir, but allow absolute paths
+	// that the user explicitly typed (e.g. a session they saved elsewhere).
+	// The main defence is the ".."-segment rejection + must-exist check.
+	return absolute;
 }
 
 interface BranchWalk {
 	turns: SessionTurn[];
 	decisions: SessionDecision[];
-	followUps: string[];
 	compactionSummaries: string[];
 	timeline: SessionTimelineItem[];
 	toolCalls: Array<{ name: string; count: number }>;
@@ -157,7 +197,6 @@ interface BranchWalk {
 function walkBranch(branch: SessionEntry[]): BranchWalk {
 	const turns: SessionTurn[] = [];
 	const decisions: SessionDecision[] = [];
-	const followUps: string[] = [];
 	const compactionSummaries: string[] = [];
 	const timeline: SessionTimelineItem[] = [];
 	const toolCallCounts = new Map<string, number>();
@@ -286,7 +325,6 @@ function walkBranch(branch: SessionEntry[]): BranchWalk {
 	return {
 		turns,
 		decisions,
-		followUps,
 		compactionSummaries,
 		timeline,
 		toolCalls: Array.from(toolCallCounts.entries()).map(([name, count]) => ({
@@ -302,16 +340,15 @@ function walkBranch(branch: SessionEntry[]): BranchWalk {
 	};
 }
 
-function synthesizeFromExisting(
-	_: BranchWalk,
+function walkToEvidence(
 	walk: BranchWalk,
-	label: string,
+	branchLength: number,
+	targetLabel: string,
 ): SessionEvidence {
-	void _;
 	return {
 		sourceKind: "file",
-		targetLabel: label,
-		branchLength: walk.turns.length,
+		targetLabel,
+		branchLength,
 		totalMessages: walk.totalMessages,
 		userPrompts: walk.userPrompts,
 		assistantSummaries: walk.assistantSummaries,
@@ -319,7 +356,6 @@ function synthesizeFromExisting(
 		toolCalls: walk.toolCalls,
 		touchedFiles: walk.touchedFiles,
 		decisions: walk.decisions,
-		followUps: walk.followUps,
 		compactionSummaries: walk.compactionSummaries,
 		startedAt: walk.startedAt,
 		endedAt: walk.endedAt,
@@ -337,10 +373,8 @@ function truncateBranchAt(branch: SessionEntry[], entryId: string): SessionEntry
 function findResumeMarker(
 	branch: SessionEntry[],
 ): { entryId: string; previousSessionFile?: string; timestamp?: string } | undefined {
-	// Walk the branch in chronological order; the first `visual-recap:resume-from`
-	// custom entry marks the resume boundary.
 	for (const entry of branch) {
-		if (entry.type === "custom" && entry.customType === "visual-recap:resume-from") {
+		if (entry.type === "custom" && entry.customType === RESUME_MARKER_TYPE) {
 			const data = entry.data as { previousSessionFile?: string } | undefined;
 			return {
 				entryId: entry.id,
@@ -357,63 +391,42 @@ function summariseTree(
 	currentLeafId: string | null,
 ): SessionBranchSummary[] {
 	const summaries: SessionBranchSummary[] = [];
-	visitTree(tree, currentLeafId, [], summaries);
+	for (const node of tree) {
+		visitTree(node, currentLeafId, summaries);
+	}
 	return summaries;
 }
 
 function visitTree(
-	nodes: SessionTreeNode[],
+	node: SessionTreeNode,
 	currentLeafId: string | null,
-	ancestorUserPrompts: string[],
 	out: SessionBranchSummary[],
 ): void {
-	for (const node of nodes) {
-		const userPrompts = [...ancestorUserPrompts];
-		let firstUserPrompt: string | undefined;
-		let lastUserPrompt: string | undefined;
-		let length = 0;
-		let label: string | undefined;
-		let branchSummary: string | undefined;
-		const directUserPrompts: string[] = [];
-		if (node.entry.type === "message") {
-			const msg = (node.entry as { message: { role?: string; content?: unknown } }).message;
-			if (msg?.role === "user") {
-				const text = extractText(msg.content);
-				if (text.trim()) {
-					directUserPrompts.push(text);
-				}
-			}
-		}
-		if (node.entry.type === "label") {
-			label = node.entry.label ?? undefined;
-		}
-		if (node.entry.type === "branch_summary") {
-			branchSummary = node.entry.summary;
-		}
-		// Walk children, accumulate stats.
-		for (const child of node.children) {
-			length += 1;
-			collectUserPromptsFromNode(child, directUserPrompts);
-		}
-		if (directUserPrompts.length > 0) {
-			firstUserPrompt = directUserPrompts[0];
-			lastUserPrompt = directUserPrompts[directUserPrompts.length - 1];
-		}
-		out.push({
-			leafId: node.entry.id === currentLeafId ? currentLeafId : null,
-			...(label ? { label } : {}),
-			...(branchSummary ? { branchSummary } : {}),
-			length,
-			...(firstUserPrompt ? { firstUserPrompt } : {}),
-			...(lastUserPrompt ? { lastUserPrompt } : {}),
-		});
-		for (const child of node.children) {
-			visitTree([child], currentLeafId, [...userPrompts, ...directUserPrompts], out);
-		}
+	const directUserPrompts: string[] = collectUserPromptsFromNode(node);
+	const subtreeSize = countSubtree(node);
+	const label = node.entry.type === "label" ? node.entry.label ?? undefined : undefined;
+	const branchSummary =
+		node.entry.type === "branch_summary" ? node.entry.summary : undefined;
+	const isCurrentLeaf = node.entry.id === currentLeafId;
+	const firstUserPrompt = directUserPrompts[0];
+	const lastUserPrompt = directUserPrompts[directUserPrompts.length - 1];
+	out.push({
+		leafId: isCurrentLeaf ? currentLeafId : null,
+		...(label ? { label } : {}),
+		...(branchSummary ? { branchSummary } : {}),
+		length: subtreeSize,
+		...(firstUserPrompt ? { firstUserPrompt } : {}),
+		...(lastUserPrompt && lastUserPrompt !== firstUserPrompt
+			? { lastUserPrompt }
+			: {}),
+	});
+	for (const child of node.children) {
+		visitTree(child, currentLeafId, out);
 	}
 }
 
-function collectUserPromptsFromNode(node: SessionTreeNode, out: string[]): void {
+function collectUserPromptsFromNode(node: SessionTreeNode): string[] {
+	const out: string[] = [];
 	if (node.entry.type === "message") {
 		const msg = (node.entry as { message: { role?: string; content?: unknown } }).message;
 		if (msg?.role === "user") {
@@ -422,8 +435,15 @@ function collectUserPromptsFromNode(node: SessionTreeNode, out: string[]): void 
 		}
 	}
 	for (const child of node.children) {
-		collectUserPromptsFromNode(child, out);
+		out.push(...collectUserPromptsFromNode(child));
 	}
+	return out;
+}
+
+function countSubtree(node: SessionTreeNode): number {
+	let count = 1;
+	for (const child of node.children) count += countSubtree(child);
+	return count;
 }
 
 function shortSessionLabel(session: string, id: string | null): string {
@@ -498,13 +518,25 @@ function recordTouchedFiles(
 	touched.push({ path, action: kind });
 }
 
+/**
+ * Extract a file path from a tool-call arg summary.
+ * Handles JSON double-quoted, JSON single-quoted, and unquoted word forms.
+ */
 function extractPathFromArgs(argsSummary: string): string | undefined {
-	const match = argsSummary.match(/"((?:\\.|[^"\\])*)"/);
-	if (match) {
+	const candidates = [
+		/"((?:\\.|[^"\\])*)"/,
+		/'((?:\\.|[^'\\])*)'/,
+		/\b([A-Za-z0-9_./-]+\.[A-Za-z0-9]+)\b/,
+	];
+	for (const re of candidates) {
+		const match = argsSummary.match(re);
+		if (!match) continue;
+		const raw = match[1] ?? "";
 		try {
-			return JSON.parse(`"${match[1]}"`) as string;
+			if (re === candidates[2]) return raw; // unquoted: return as-is
+			return JSON.parse(`"${raw}"`) as string;
 		} catch {
-			return undefined;
+			return raw || undefined;
 		}
 	}
 	return undefined;
