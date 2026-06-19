@@ -74,7 +74,7 @@ function buildGitPrompt(evidence: RecapEvidence, targetLabel: string): string {
 		e.diffText || "(no diff content)",
 		"```",
 	].join("\n");
-	return wrapEvidence(data) + instructionGit();
+	return wrapEvidence(data) + instructionCode();
 }
 
 function buildPrPrompt(evidence: RecapEvidence, targetLabel: string): string {
@@ -222,19 +222,11 @@ const SESSION_OUTPUT_INTERFACE = [
 	"```",
 ].join("\n");
 
-function instructionGit(): string {
-	return [
-		"Return ONLY a JSON object matching this TypeScript shape (no commentary, no markdown fences):",
-		OUTPUT_INTERFACE,
-		"Use 3-8 keyChanges. Do not invent files. Output JSON only.",
-	].join("\n");
-}
-
 function instructionCode(): string {
 	return [
 		"Return ONLY a JSON object matching this TypeScript shape (no commentary, no markdown fences):",
 		OUTPUT_INTERFACE,
-		"Use 3-8 keyChanges. Output JSON only.",
+		"Use 3-8 keyChanges. Do not invent files. Output JSON only.",
 	].join("\n");
 }
 

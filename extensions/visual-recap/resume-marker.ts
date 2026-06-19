@@ -7,7 +7,7 @@
 // marker is durable and ignored by pi's context builder (custom entries do
 // not participate in LLM context by design — see session-format.md).
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { RESUME_MARKER_TYPE } from "./collectors/pi-session.ts";
 
 export function writeResumeMarker(
@@ -29,6 +29,3 @@ export function writeResumeMarker(
 		console.warn(`[pi-visual-recap] Failed to write resume marker: ${safe}`);
 	}
 }
-
-// Re-export for callers that want to notify on failure.
-export type { ExtensionContext };
