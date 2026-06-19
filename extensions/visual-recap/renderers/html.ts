@@ -778,27 +778,40 @@ function renderFileGallery(
 	if (entries.length === 0)
 		return `<p class="prose">No changed files were captured.</p>`;
 	// Drive the tabbed "files with diffs" section from the key changes paths
-	// reported by the model. Files outside that set get listed as "Other
-	// files" with no diff body — keeps the diff UI focused on what the recap
-	// actually called out.
+	// reported by the model when available — keeps the diff UI focused on
+	// what the recap actually called out. When no key changes were supplied
+	// (or none of them matched a file with a diff), fall back to showing
+	// every file that has a diff so the recap never silently hides changes.
 	const keySet = new Set(keyChangePaths);
-	const matchedFiles: FileMapEntry[] = [];
+	const filesWithDiffs: FileMapEntry[] = [];
 	const otherFiles: FileMapEntry[] = [];
 	const seen = new Set<string>();
 	for (const entry of entries) {
 		if (seen.has(entry.path)) continue;
 		seen.add(entry.path);
 		const hasDiff = typeof entry.diff === "string" && entry.diff.length > 0;
-		if (keySet.has(entry.path) && hasDiff) {
-			matchedFiles.push(entry);
+		if (hasDiff) {
+			filesWithDiffs.push(entry);
 		} else {
 			otherFiles.push(entry);
+		}
+	}
+	const tabFiles =
+		keySet.size > 0
+			? filesWithDiffs.filter((e) => keySet.has(e.path))
+			: filesWithDiffs;
+	if (keySet.size > 0) {
+		// When key changes are supplied, files with diffs that weren't
+		// called out still get listed under "Other files" so nothing is
+		// silently hidden.
+		for (const entry of filesWithDiffs) {
+			if (!keySet.has(entry.path)) otherFiles.push(entry);
 		}
 	}
 	const groupId = `files-${renderGroupCounter++}`;
 	const tabButtons: string[] = [];
 	const tabPanels: string[] = [];
-	matchedFiles.forEach((entry, index) => {
+	tabFiles.forEach((entry, index) => {
 		const badge = badgeFor(entry.status);
 		const tabId = `${groupId}-tab-${index}`;
 		const panelId = `${groupId}-panel-${index}`;
@@ -829,7 +842,7 @@ function renderFileGallery(
 		);
 	});
 	const tabs =
-		matchedFiles.length > 0
+		tabFiles.length > 0
 			? `<div class="file-tabs" role="tablist" aria-label="Key changed files">
 				${tabButtons.join("")}
 			</div>
@@ -845,10 +858,10 @@ function renderFileGallery(
 			</div>`
 			: "";
 	const note =
-		matchedFiles.length === 0
+		keySet.size > 0 && tabFiles.length === 0
 			? `<p class="key-changes-empty">No key changes were called out, so no diff previews are shown. Listed files are below.</p>`
 			: "";
-	const header = `<div class="file-toolbar"><div class="prose">${entries.length} file${entries.length === 1 ? "" : "s"} changed — ${matchedFiles.length} highlighted as key changes.</div></div>`;
+	const header = `<div class="file-toolbar"><div class="prose">${entries.length} file${entries.length === 1 ? "" : "s"} changed — ${tabFiles.length} highlighted as key changes.</div></div>`;
 	return `${note}${header}${tabs}${otherList}`;
 }
 

@@ -335,15 +335,17 @@ function summarizeSessionForPrompt(s: SessionEvidence): string {
 	].join("\n");
 }
 
+export interface RecapFallback {
+	title: string;
+	brief: string;
+	target: string;
+	project?: string;
+	repoRoot?: string;
+}
+
 export function coerceRecapDocument(
 	raw: string,
-	fallback: {
-		title: string;
-		brief: string;
-		target: string;
-		project?: string;
-		repoRoot?: string;
-	},
+	fallback: RecapFallback,
 	model: { provider: string; id: string } | undefined,
 	evidence: RecapEvidence,
 ): RecapDocument {
@@ -467,13 +469,7 @@ export function coerceRecapDocument(
 
 function buildFallbackDocument(
 	raw: string,
-	fallback: {
-		title: string;
-		brief: string;
-		target: string;
-		project?: string;
-		repoRoot?: string;
-	},
+	fallback: RecapFallback,
 	model: { provider: string; id: string } | undefined,
 	evidence: RecapEvidence,
 ): RecapDocument {

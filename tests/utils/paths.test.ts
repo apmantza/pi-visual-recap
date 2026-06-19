@@ -1,6 +1,9 @@
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { safeJoin } from "../../extensions/visual-recap/utils/paths.ts";
+import {
+	basenameOf,
+	safeJoin,
+} from "../../extensions/visual-recap/utils/paths.ts";
 
 describe("safeJoin", () => {
 	const base = path.resolve("/tmp/safe-base");
@@ -24,5 +27,24 @@ describe("safeJoin", () => {
 
 	it("returns the base when parts is empty", () => {
 		expect(safeJoin(base)).toBe(base);
+	});
+});
+
+describe("basenameOf", () => {
+	it("returns the last segment of a forward-slash path", () => {
+		expect(basenameOf("/home/user/pi-visual-recap")).toBe("pi-visual-recap");
+	});
+
+	it("returns the last segment of a back-slash path", () => {
+		expect(basenameOf("C:\\Users\\me\\project")).toBe("project");
+	});
+
+	it("strips trailing slashes before slicing", () => {
+		expect(basenameOf("/home/user/project/")).toBe("project");
+		expect(basenameOf("/home/user/project\\")).toBe("project");
+	});
+
+	it("returns the input when there is no separator", () => {
+		expect(basenameOf("standalone")).toBe("standalone");
 	});
 });

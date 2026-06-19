@@ -39,3 +39,9 @@ export function safeJoin(base: string, ...parts: string[]): string {
 	}
 	throw new Error(`Path escapes base directory: ${parts.join("/")}`);
 }
+
+export function basenameOf(p: string): string {
+	const trimmed = p.replace(/[\\/]+$/, "");
+	const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+	return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
